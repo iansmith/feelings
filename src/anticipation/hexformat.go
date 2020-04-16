@@ -104,7 +104,7 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 		bb.SetBaseAddr(esaAddr)
 		print("#updating current base address to ", esaAddr, "\n")
 		return false, false
-	case ExtendedLinearAddress: //32 bit addr
+	case ExtendedLinearAddress: //32 bit addr but only top 16 passed
 		length := converted[0]
 		if length != 2 {
 			print("!ELA value has too many bytes:", length, "\n")
@@ -131,10 +131,8 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 			print("!SLA value has too many bytes:", length, "\n")
 			return true, false
 		}
-		elaAddr := uint32(converted[4])*0x1000000 + uint32(converted[5])*0x10000 + uint32(converted[6])*0x100 + uint32(converted[7])
-		elaAddr = elaAddr << 16 //data supplied is high order 32
-		bb.SetEntryPoint(elaAddr)
-		print("#entry point set to ", elaAddr, "\n")
+		slaAddr := uint32(converted[4])*0x1000000 + uint32(converted[5])*0x10000 + uint32(converted[6])*0x100 + uint32(converted[7])
+		bb.SetEntryPoint(slaAddr)
 		return false, false
 	}
 

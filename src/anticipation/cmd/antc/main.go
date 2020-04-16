@@ -137,10 +137,12 @@ func processLine(line string) (bool, error) {
 		return false, errors.New("unable to excute line " + line)
 	}
 	if done {
-		//	arm.Asm("HLT #0x00")
 		if !metal.EntryPointIsSet() {
 			return false, errors.New("no entry point has been set")
 		}
+		machine.MiniUART.WriteString("# jumping to address ")
+		machine.MiniUART.Hex32string(metal.EntryPoint())
+		machine.MiniUART.WriteCR()
 		arm.AsmFull("mov x0, {t}", map[string]interface{}{"t": metal.UnixTime()})
 		arm.AsmFull("mov x8, {e}", map[string]interface{}{"e": metal.EntryPoint()})
 		arm.Asm("br x8")
