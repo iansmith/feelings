@@ -1,7 +1,23 @@
 {
-  "inherits": ["./arm64"],
-  "build-tags": ["rpi3", "rpi", "baremetal", "no_pins"],
+  "build-tags": ["rpi3", "rpi", "baremetal", "machine_external", "arm64"],
+  "goos": "linux",
+  "goarch": "arm64",
+  "compiler": "clang",
   "scheduler": "none",
   "gc": "leaking",
-  "cflags": ["--target=aarch64-elf"]
+  "cflags": ["--target=aarch64-elf",
+    "-Oz",
+    "-Werror",
+    "-fshort-enums",
+    "-fomit-frame-pointer",
+    "-fno-exceptions", "-fno-unwind-tables",
+    "-ffunction-sections", "-fdata-sections"],
+  "linker": "ld.lld",
+  "rtlib": "compiler-rt",
+  "libc": "picolibc",
+  "llvm-target": "aarch64-none-elf",
+  "ldflags": [
+    "--gc-sections"
+  ],
+  "gdb": "aarch64-elf-gdb"
 }

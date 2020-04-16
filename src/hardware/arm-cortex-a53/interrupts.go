@@ -55,13 +55,13 @@ func rawExceptionHandler(t uint64, esr uint64, addr uint64) {
 
 //go:noinline
 func unexpectedException(t uint64, esr uint64, addr uint64) {
-	bcm2835.MiniUART.WriteString("Unexpected Exception: ")
-	bcm2835.MiniUART.WriteString(entryErrorMessages[t])
-	bcm2835.MiniUART.WriteString(", ESR 0x")
-	bcm2835.MiniUART.Hex64string(esr)
-	bcm2835.MiniUART.WriteString(", ADDR 0x")
-	bcm2835.MiniUART.Hex64string(addr)
-	bcm2835.MiniUART.WriteCR()
+	print("Unexpected Exception: ")
+	print(entryErrorMessages[t])
+	print(", ESR 0x")
+	print(esr)
+	print(", ADDR 0x")
+	print(addr)
+	print("\n")
 }
 
 var entryErrorMessages = []string{

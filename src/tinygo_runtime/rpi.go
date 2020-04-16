@@ -4,11 +4,13 @@ import (
 	p "feelings/src/hardware/bcm2835"
 
 	"github.com/tinygo-org/tinygo/src/device/arm"
-	"github.com/tinygo-org/tinygo/src/machine"
 )
 
+//decls
+var MiniUART *UART
+
 func Abort(s string) {
-	p.MiniUART.WriteString("Aborting..." + s + "\n")
+	MiniUART.WriteString("Aborting..." + s + "\n")
 	for {
 		arm.Asm("nop")
 	}
@@ -31,11 +33,6 @@ func WaitMuSec(n uint64) {
 			str x27,{r}`, map[string]interface{}{"r": &r})
 	}
 }
-
-// XXX Unclear how to do the PIN mapping for a RPI3 because of function select
-type PinMode struct{}
-
-func (p machine.Pin) Set(_ bool) {}
 
 //
 // RPI has many uarts, this is the "miniuart" which is the simplest to configure.

@@ -2,7 +2,7 @@ package main
 
 import (
 	"feelings/src/anticipation"
-	"feelings/src/hardware/bcm2835"
+	arm64 "feelings/src/hardware/arm-cortex-a53"
 )
 
 type oneLine []uint8
@@ -41,9 +41,9 @@ func (l *lineRing) empty() bool {
 func (l *lineRing) next(buffer []uint8) string {
 	for {
 		if l.empty() {
-			bcm2835.UnmaskDAIF()
+			arm64.UnmaskDAIF()
 			wait()
-			bcm2835.MaskDAIF()
+			arm64.MaskDAIF()
 		} else {
 			break // can only get here with interrupts masked
 		}

@@ -3,9 +3,13 @@ package main
 import (
 	"errors"
 	"feelings/src/anticipation"
+	"feelings/src/hardware/bcm2835"
+
+	arm64 "feelings/src/hardware/arm-cortex-a53"
+	rt "feelings/src/tinygo_runtime"
 
 	"github.com/tinygo-org/tinygo/src/device/arm"
-	"github.com/tinygo-org/tinygo/src/machine"
+	tinygoRuntime "github.com/tinygo-org/tinygo/src/runtime"
 )
 
 var buffer oneLine
@@ -30,32 +34,34 @@ func wait() {
 }
 
 func main() {
+	tinygoRuntime.SetExternalRuntime(&rt.BaremetalRT{})
+
 	buffer = make([]uint8, anticipation.FileXFerDataLineSize)
 	lr = newLineRing() //probably overkill since never need more than 1 line
 	metal = anticipation.NewMetalByteBuster()
 
-	machine.MiniUART = machine.NewUART()
-	machine.MiniUART.Configure(machine.UARTConfig{RXInterrupt: true})
+	rt.MiniUART = rt.NewUART()
+	rt.MiniUART.Configure(rt.UARTConfig{RXInterrupt: true})
 	//interrupts start as off
-	machine.InitInterrupts()
+	arm64.InitInterrupts()
 	//all interrupts are "unexpected" until we set this
-	machine.SetExceptionHandlerEl1hInterrupts(miniUARTReceive)
+	arm64.SetExceptionHandlerEl1hInterrupts(miniUARTReceive)
 
 	//tell the interrupt controller what we want and then unmask interrupts
-	machine.InterruptController.EnableIRQs1.SetBits(machine.AuxInterrupt)
-	machine.UnmaskDAIF()
+	bcm2835.InterruptController.EnableIRQs1.SetBits(bcm2835.AuxInterrupt)
+	arm64.UnmaskDAIF()
 
 	for {
-		machine.MaskDAIF()
+		arm64.MaskDAIF()
 		if started {
 			//we leave this loop with interrupts OFF
 			break
 		}
-		machine.UnmaskDAIF()
-		machine.MiniUART.WriteString(".")
-		machine.MiniUART.WriteByte('\n')
+		arm64.UnmaskDAIF()
+		rt.MiniUART.WriteString(".")
+		rt.MiniUART.WriteByte('\n')
 		wait()
-		machine.MaskDAIF()
+		arm64.MaskDAIF()
 
 	}
 
@@ -68,11 +74,11 @@ func main() {
 		}
 		done, err := processLine(s)
 		if err != nil {
-			machine.MiniUART.WriteString("!" + err.Error())
+			rt.MiniUART.WriteString("!" + err.Error())
 		} else {
-			machine.MiniUART.WriteString(".")
+			rt.MiniUART.WriteString(".")
 		}
-		machine.MiniUART.WriteByte('\n')
+		rt.MiniUART.WriteByte('\n')
 		if done {
 			break
 		}
@@ -83,9 +89,9 @@ func main() {
 func miniUARTReceive(t uint64, esr uint64, addr uint64) {
 	//this ignores the possibility that HasBits(6) because docs (!)
 	//say that bits 2 and 1 cannot both be set, so we just check bit 2
-	if machine.Aux.MiniUARTInterruptIdentify.HasBits(4) {
+	if bcm2835.Aux.MiniUARTInterruptIdentify.HasBits(4) {
 		for {
-			if !machine.Aux.MiniUARTLineStatus.HasBits(machine.ReceiveFIFOReady) {
+			if !bcm2835.Aux.MiniUARTLineStatus.HasBits(bcm2835.ReceiveFIFOReady) {
 				break
 			}
 			//this is slightly dodgy, but since interrupts are off, it's ok
@@ -93,21 +99,21 @@ func miniUARTReceive(t uint64, esr uint64, addr uint64) {
 				started = true
 			}
 			//pull the character into the internal buffer
-			ch := machine.MiniUART.ReadByte()
+			ch := rt.MiniUART.ReadByte()
 			switch {
 			case ch == 10:
-				machine.MiniUART.LoadRx(10)
-				moved := machine.MiniUART.CopyRxBuffer(buffer)
+				rt.MiniUART.LoadRx(10)
+				moved := rt.MiniUART.CopyRxBuffer(buffer)
 				lr.addLineToRing(string(buffer[:moved]))
 			case ch < 32:
 				//nothing
 			default:
-				machine.MiniUART.LoadRx(ch) //put it in the receive buffer
+				rt.MiniUART.LoadRx(ch) //put it in the receive buffer
 			}
 		}
 	} else {
-		machine.MiniUART.WriteString("#Expected RX interrupt, but none found!")
-		machine.MiniUART.WriteByte('\n')
+		rt.MiniUART.WriteString("#Expected RX interrupt, but none found!")
+		rt.MiniUART.WriteByte('\n')
 	}
 }
 
@@ -140,9 +146,9 @@ func processLine(line string) (bool, error) {
 		if !metal.EntryPointIsSet() {
 			return false, errors.New("no entry point has been set")
 		}
-		machine.MiniUART.WriteString("# jumping to address ")
-		machine.MiniUART.Hex32string(metal.EntryPoint())
-		machine.MiniUART.WriteCR()
+		rt.MiniUART.WriteString("# jumping to address ")
+		rt.MiniUART.Hex32string(metal.EntryPoint())
+		rt.MiniUART.WriteCR()
 		arm.AsmFull("mov x0, {t}", map[string]interface{}{"t": metal.UnixTime()})
 		arm.AsmFull("mov x8, {e}", map[string]interface{}{"e": metal.EntryPoint()})
 		arm.Asm("br x8")
