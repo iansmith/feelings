@@ -178,80 +178,22 @@ error_el0_32:
 .section ".text.boot"
 .globl _start
 _start:
-	mov x0, #0x760
-	lsl x0,x0,#8
-	mov sp,x0 //safety if we fail during boot
-	mrs	x0, mpidr_el1
-	and	x0, x0,#0xFF		// Check processor id
-	cbz	x0, master		// Hang for all non-primary CPU
-	b	proc_hang
-
-.align 3
-proc_hang:
-	b 	proc_hang
-
-master:
-  adr x8,get_el
-  blr x8
-	sub x4,x0,#2 //store 0 if EL2 and 1 (assumed) if EL3 (hardware?)
-	//cant do this
-	//orr x0, xzr, #0x30D00800 // SystemControlRegisterValueMMUDisabled
-	//so forced to do this
-	orr x0,xzr, #3
-	lsl x0,x0,#28
-	orr x1,xzr, #3
-	lsl x1,x1,22
-	orr x2,xzr,#1
-	lsl x2,x2,20
-	orr x2,x2,#0x800
-	orr x1,x1,x2
-	orr x0,x0,x1
-	msr	sctlr_el1, x0
-
-	orr	x0,xzr, #0x80000000 // HypervisorConfigurationRegisterValue
-	msr	hcr_el2, x0
-
-	//do we need to do the drop from el2 because we are in qemu?
-	cbz x4,el2_drop_to_el1
-
-	//we are in el3
-	orr	x0,xzr, #0x400 // SecureConfigurationRegisterValue
-	orr x0,x0, #0x30
-	orr x0,x0,#1
-	msr	scr_el3, x0
-
-	//xxx seems like this should be C3 not C0? to go to EL1
-	and x0,x0, #0x1C0 // SavedProgramStatusRegisterValue, we use a const for el3
-	msr	spsr_el3, x0
-
-	adr	x0, el1_entry
-	msr	elr_el3, x0
-	eret
-
-el2_drop_to_el1:
-	mrs x0, spsr_el2 // SavedProgramStatusRegisterValue but for EL2
-	orr x0,x0,#0x4 //bit 2, bit 0  (bit 2 => level 1 is desired EL, bit0 means use own stack for EL1), so EL1h
-	orr x0,x0,#0x1 //second step because #0x5 isn't a legal const
-	msr	spsr_el2, x0
-
-	adr	x0, el1_entry
-	msr	elr_el2, x0
-	eret
-
-el1_entry:
-	// retset stack before our code (we are now in el1)
-	mov     x1, #0x760
-	lsl     x1,x1,#0x8
-	mov     sp, x1
+	// retset stack before our code (we are in el1)
+	// the stack will end up overwriting the bootloader when we reach 0x80000
+	mov     x1, #0x100000
+	mov     sp,x1
 	mov     x30,xzr
 
-	//can't branch and link here because the stack and link are in a bad state
+    //jump to main
 	adr x8, main
-	br x8
+	blr x8
 
 	adr x8, err_hang
 	br x8
 
+.globl semihosting_param_block
+semihosting_param_block:
+.space 16
 
 .align(11)
 err_hang: b err_hang
@@ -259,8 +201,3 @@ err_hang: b err_hang
 .globl getSystemStackPointer
 getSystemStackPointer:
 	mov sp,x0
-
-get_el:
-	mrs x0, CurrentEL
-	lsr x0, x0, #2
-	ret

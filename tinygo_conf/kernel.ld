@@ -6,10 +6,16 @@
 
 SECTIONS
 {
+    . = 0x1000;
+    .exc  ALIGN(0x1000): {
+        KEEP(*(.exc_vector))
+    }
+
     . = 0x100000;
     .text : ALIGN(0x10000) {
                 KEEP(*(.text))
                 KEEP(*(.text.*))
+                KEEP(*(.text.boot))
                 *(.gnu.linkonce.t*)
     }
 
@@ -31,7 +37,7 @@ SECTIONS
         _ebss = .;
     }
 
-   /DISCARD/ : { *(.comment) *(.gnu*) *(.note*) *(.eh_frame*) *(.text.boot)  }
+   /DISCARD/ : { *(.comment) *(.gnu*) *(.note*) *(.eh_frame*)  }
 }
 
 _heap_start = 0x400000;

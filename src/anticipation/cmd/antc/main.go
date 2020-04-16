@@ -146,6 +146,8 @@ func processLine(line string) (bool, error) {
 		if !metal.EntryPointIsSet() {
 			return false, errors.New("no entry point has been set")
 		}
+		rt.MiniUART.WriteString(".")
+		rt.MiniUART.WriteCR() //signal the sender everything is ok
 		rt.MiniUART.WriteString("# jumping to address ")
 		rt.MiniUART.Hex32string(metal.EntryPoint())
 		rt.MiniUART.WriteCR()

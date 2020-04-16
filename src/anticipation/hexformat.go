@@ -336,7 +336,7 @@ func EncodeELA(base uint16) string {
 // only pass the top 16 bits of 24 bit base
 func EncodeESA(base uint16) string {
 	buf := bytes.Buffer{}
-	buf.WriteString(fmt.Sprintf(":020000%02X%02X", int(ExtendedSegmentAddress), base))
+	buf.WriteString(fmt.Sprintf(":020000%02X%04X", int(ExtendedSegmentAddress), base))
 	raw := []byte{byte(base & 0xff00 >> 8), byte(base & 0x00ff)}
 	cs := createChecksum(raw, 0, ExtendedSegmentAddress)
 	buf.WriteString(fmt.Sprintf("%02X", cs))
