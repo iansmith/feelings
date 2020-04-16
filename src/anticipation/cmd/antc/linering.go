@@ -2,8 +2,7 @@ package main
 
 import (
 	"feelings/src/anticipation"
-
-	"github.com/tinygo-org/tinygo/src/machine"
+	"feelings/src/hardware/bcm2835"
 )
 
 type oneLine []uint8
@@ -42,9 +41,9 @@ func (l *lineRing) empty() bool {
 func (l *lineRing) next(buffer []uint8) string {
 	for {
 		if l.empty() {
-			machine.UnmaskDAIF()
+			bcm2835.UnmaskDAIF()
 			wait()
-			machine.MaskDAIF()
+			bcm2835.MaskDAIF()
 		} else {
 			break // can only get here with interrupts masked
 		}

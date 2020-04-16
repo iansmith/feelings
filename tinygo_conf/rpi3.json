@@ -1,0 +1,7 @@
+{
+  "inherits": ["./arm64"],
+  "build-tags": ["rpi3", "rpi", "baremetal", "no_pins"],
+  "scheduler": "none",
+  "gc": "leaking",
+  "cflags": ["--target=aarch64-elf"]
+}
