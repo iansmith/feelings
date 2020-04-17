@@ -180,9 +180,10 @@ error_el0_32:
 _start:
 	// retset stack before our code (we are in el1)
 	// the stack will end up overwriting the bootloader when we reach 0x80000
-	mov     x1, #0x100000
+	mov     x1, #0x400000
 	mov     sp,x1
 	mov     x30,xzr
+
 
     //jump to main
 	adr x8, main

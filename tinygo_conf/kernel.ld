@@ -11,7 +11,7 @@ SECTIONS
         KEEP(*(.exc_vector))
     }
 
-    . = 0x100000;
+    . = 0x10000;
     .text : ALIGN(0x10000) {
                 KEEP(*(.text))
                 KEEP(*(.text.*))

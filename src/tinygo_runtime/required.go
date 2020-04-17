@@ -15,9 +15,8 @@ var _ebss [0]byte
 type BaremetalRT struct {
 }
 
-func (b *BaremetalRT) Putchar(c byte) int {
+func (b *BaremetalRT) Putchar(c byte) {
 	MiniUART.WriteByte(c)
-	return 0
 }
 
 func (b *BaremetalRT) Abort() {

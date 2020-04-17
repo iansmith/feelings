@@ -20,7 +20,7 @@ func TestEndToEnd(t *testing.T) {
 	bb := newFakeByteBuster(values, 0x10)
 
 	ut := ":040000805E964DD368"
-	checkAllAndProcess(t, ut, ExtensionUnixTime, bb, 0x22222, false)
+	checkAllAndProcess(t, ut, ExtensionUnixTime, bb, 0, false)
 	if bb.UnixTime() != 0x5E964DD3 {
 		t.Errorf("unix time was not set, expected 5E964DD3 but got %x", bb.UnixTime())
 	}
@@ -33,8 +33,8 @@ func TestEndToEnd(t *testing.T) {
 	if bb.written != 0 {
 		t.Errorf("should not write bytes on an ESA line")
 	}
-	if !bb.EntryPointIsSet() {
-		t.Errorf("entry point was updated, but not visible in EntryPointIsSet")
+	if bb.EntryPointIsSet() {
+		t.Errorf("entry point should not be set yet")
 	}
 
 	gw := ":0B0010006164647265737320676170A7"
@@ -42,7 +42,13 @@ func TestEndToEnd(t *testing.T) {
 	elastr := ":02000004FC0AF4"
 	checkAllAndProcess(t, elastr, ExtendedLinearAddress, bb, 0xFC0A0000, false) //unchanged after a data line
 	entryPoint := ":04000005000000CD2A"
+	if bb.EntryPointIsSet() {
+		t.Errorf("entry point should not be set yet!")
+	}
 	checkAllAndProcess(t, entryPoint, StartLinearAddress, bb, 0xFC0A0000, false) //unchanged after a data line
+	if !bb.EntryPointIsSet() {
+		t.Logf("we setthe entry point with an SLA but it is not visible in EntryPointIsSet")
+	}
 	if bb.EntryPoint() != 0xCD0000 {
 		t.Logf("expected entry point 0xCD because of SLA but got %8x", bb.EntryPoint())
 	}

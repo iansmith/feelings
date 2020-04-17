@@ -17,7 +17,6 @@
   "libc": "picolibc",
   "llvm-target": "aarch64-none-elf",
   "ldflags": [
-    "--gc-sections"
   ],
   "gdb": "aarch64-elf-gdb"
 }
