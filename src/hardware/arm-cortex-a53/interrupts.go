@@ -16,13 +16,11 @@ type exceptionHandler func(uint64, uint64, uint64)
 var excptrs [16]exceptionHandler
 
 // MaskDAIF sets the value of the four D-A-I-F interupt masking on the ARM
-//go:noinline
 func MaskDAIF() {
 	arm.Asm("msr    daifset, #0xf")
 }
 
 // UnmaskDAIF sets the value of the four D-A-I-F interupt masking on the ARM
-//go:noinline
 func UnmaskDAIF() {
 	arm.Asm("msr    daifclr, #0xf")
 }
@@ -34,7 +32,6 @@ var vectors uint64
 func proc_hang()
 
 // Called to make sure all the interrupt machinery is in the right startup state.
-//go:noinline
 func InitInterrupts() {
 	for i := 0; i < len(excptrs); i++ {
 		excptrs[i] = unexpectedException
@@ -59,7 +56,6 @@ func rawExceptionHandler(t uint64, esr uint64, addr uint64) {
 	excptrs[t](t, esr, addr)
 }
 
-//go:noinline
 func unexpectedException(t uint64, esr uint64, addr uint64) {
 	print("Unexpected Exception: ")
 	print(entryErrorMessages[t])

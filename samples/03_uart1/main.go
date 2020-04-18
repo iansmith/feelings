@@ -34,7 +34,6 @@ func main() {
 //go:export
 var value *uint64
 
-//go:noinline
 func miniUARTReceive(t uint64, esr uint64, addr uint64) {
 	//this ignores the possibility that HasBits(6) because docs (!)
 	//say that bits 2 and 1 cannot both be set, so we just check bit 2

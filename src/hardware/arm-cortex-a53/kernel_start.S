@@ -1,3 +1,7 @@
+/*
+ * This is used for the stage 1 kernel, Happiness.
+ */
+
 .section ".exc_vector","ax",@progbits
 .align 7
 
@@ -180,10 +184,16 @@ error_el0_32:
 _start:
 	// retset stack before our code (we are in el1)
 	// the stack will end up overwriting the bootloader when we reach 0x80000
-	mov     x1, #0x400000
-	mov     sp,x1
+	mov     x8, #0x400000
+	mov     sp,x8
 	mov     x30,xzr
 
+    //parameters are in the callee saved registers
+    mov x0, x19
+    mov x1, x20
+    mov x2, x21
+    mov x3, x22
+    mov x4, x23
 
     //jump to main
 	adr x8, main
@@ -202,3 +212,4 @@ err_hang: b err_hang
 .globl getSystemStackPointer
 getSystemStackPointer:
 	mov sp,x0
+

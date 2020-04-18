@@ -2,6 +2,7 @@ package main
 
 import (
 	"feelings/src/golang/strconv"
+	"feelings/src/hardware/bcm2835"
 	rt "feelings/src/tinygo_runtime"
 	"reflect"
 )
@@ -203,4 +204,25 @@ func snarfSpecifier(s string, start int) (uint8, string, bool) {
 		}
 	}
 	return keychar, qualifier, completed
+}
+
+//
+// SysTimer gets the 64 bit timer's value.
+//
+//go:export SystemTime()
+func SystemTime() uint64 {
+	h := uint32(0xffffffff)
+	var l uint32
+
+	// the reads from system timer are two separate 32 bit reads
+	h = bcm2835.SysTimer.CounterHigher32.Get()
+	l = bcm2835.SysTimer.CounterLower32.Get()
+	//the read of hi can fail
+	again := bcm2835.SysTimer.CounterHigher32.Get()
+	if h != again {
+		h = bcm2835.SysTimer.CounterHigher32.Get()
+		l = bcm2835.SysTimer.CounterLower32.Get()
+	}
+	high := uint64(h << 32)
+	return high | uint64(l)
 }

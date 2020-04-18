@@ -234,7 +234,6 @@ func (uart *UART) Hex64string(d uint64) {
 
 // CopyRxBuffer copies entire RX buffer into target and leaves it empty
 // Caller needs to insure that all of the buffer can fit into target
-//go:noinline
 func (uart *UART) CopyRxBuffer(target []byte) uint32 {
 	moved := uint32(0)
 	found := false
@@ -257,7 +256,6 @@ func (uart *UART) CopyRxBuffer(target []byte) uint32 {
 
 // DumpRxBuffer pushes the entire RX buffer out to serial and leaves the
 // buffer empty.
-//go:noinline
 func (uart *UART) DumpRxBuffer() uint32 {
 	moved := uint32(0)
 	for !uart.EmptyRx() {
@@ -274,7 +272,6 @@ func (uart *UART) DumpRxBuffer() uint32 {
 // LoadRx puts a byte in the RxBuffer as if it came in from
 // the other side.  Probably should be called from an exception
 // hadler.
-//go:noinline
 func (uart *UART) LoadRx(b uint8) {
 	//receiver holds a valid byte
 	index := uart.rxhead
@@ -285,7 +282,6 @@ func (uart *UART) LoadRx(b uint8) {
 }
 
 // EmptyRx is true if the receiver ring buffer is empty.
-//go:noinline
 func (uart *UART) EmptyRx() bool {
 	return uart.rxtail == uart.rxhead
 }
@@ -294,7 +290,6 @@ func (uart *UART) EmptyRx() bool {
 // this busy waits on EmptyRx() so you should be sure
 // there is data there before you call this or it will block
 // and only an interrupt can save that...
-//go:noinline
 func (uart *UART) NextRx() uint8 {
 	for {
 		if !uart.EmptyRx() {

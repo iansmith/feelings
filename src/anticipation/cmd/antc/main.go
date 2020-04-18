@@ -4,12 +4,12 @@ import (
 	"errors"
 	"feelings/src/anticipation"
 	"feelings/src/hardware/bcm2835"
+	"unsafe"
 
 	arm64 "feelings/src/hardware/arm-cortex-a53"
 	rt "feelings/src/tinygo_runtime"
 
 	"github.com/tinygo-org/tinygo/src/device/arm"
-	tinygoRuntime "github.com/tinygo-org/tinygo/src/runtime"
 )
 
 var buffer oneLine
@@ -33,15 +33,17 @@ func wait() {
 	}
 }
 
-func main() {
-	tinygoRuntime.SetExternalRuntime(&rt.BaremetalRT{})
+//go:extern anticipation_addr
+var anticipation_addr uint64
 
+func main() {
 	buffer = make([]uint8, anticipation.FileXFerDataLineSize)
 	lr = newLineRing() //probably overkill since never need more than 1 line
 	metal = anticipation.NewMetalByteBuster()
 
 	rt.MiniUART = rt.NewUART()
 	rt.MiniUART.Configure(rt.UARTConfig{RXInterrupt: true})
+	rt.MiniUART.WriteString("OK1\n")
 	//interrupts start as off
 	arm64.InitInterrupts()
 	//all interrupts are "unexpected" until we set this
@@ -50,7 +52,6 @@ func main() {
 	//tell the interrupt controller what we want and then unmask interrupts
 	bcm2835.InterruptController.EnableIRQs1.SetBits(bcm2835.AuxInterrupt)
 	arm64.UnmaskDAIF()
-
 	for {
 		arm64.MaskDAIF()
 		if started {
@@ -65,6 +66,12 @@ func main() {
 
 	}
 
+	rt.MiniUART.WriteString("#\n")
+	rt.MiniUART.WriteString("# Stage 0 kernel running: Anticipation bootloader\n")
+	rt.MiniUART.WriteString("# Running from physical address 0x")
+	rt.MiniUART.Hex64string((uint64)(uintptr(unsafe.Pointer(&anticipation_addr))))
+	rt.MiniUART.WriteString("\n")
+	rt.MiniUART.WriteString("#\n")
 	//nothing to do but wait for interrupts, we use lr.next() to block
 	//until we get a line, and lr.next implies interrupts are off
 	for {
@@ -85,7 +92,6 @@ func main() {
 	}
 }
 
-//go:noinline
 func miniUARTReceive(t uint64, esr uint64, addr uint64) {
 	//this ignores the possibility that HasBits(6) because docs (!)
 	//say that bits 2 and 1 cannot both be set, so we just check bit 2
@@ -116,6 +122,9 @@ func miniUARTReceive(t uint64, esr uint64, addr uint64) {
 		rt.MiniUART.WriteByte('\n')
 	}
 }
+
+//go:extern get_el
+func getEl() uint64
 
 func processLine(line string) (bool, error) {
 	//clip off the LF that came from server
@@ -148,10 +157,14 @@ func processLine(line string) (bool, error) {
 		}
 		rt.MiniUART.WriteString(".")
 		rt.MiniUART.WriteCR() //signal the sender everything is ok
-		rt.MiniUART.WriteString("# jumping to address ")
+		rt.MiniUART.WriteString("@ jumping to address ")
 		rt.MiniUART.Hex32string(metal.EntryPoint())
 		rt.MiniUART.WriteCR()
-		arm.AsmFull("mov x0, {t}", map[string]interface{}{"t": metal.UnixTime()})
+		arm.AsmFull("mov x19, {t}", map[string]interface{}{"t": metal.UnixTime()})
+		arm.AsmFull("mov x20, {e}", map[string]interface{}{"e": metal.EntryPoint()})
+		arm.AsmFull("mov x21, {el}", map[string]interface{}{"el": getEl()})
+		arm.Asm("mov x22, xzr")
+		arm.Asm("mov x23, xzr")
 		arm.AsmFull("mov x8, {e}", map[string]interface{}{"e": metal.EntryPoint()})
 		arm.Asm("br x8")
 	}

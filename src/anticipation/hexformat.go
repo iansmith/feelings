@@ -102,7 +102,6 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 		esaAddr := uint32(converted[4])*256 + uint32(converted[5])
 		esaAddr = esaAddr << 4 //it's assumed to be a multiple of 16
 		bb.SetBaseAddr(esaAddr)
-		print("#updating current base address to ", esaAddr, "\n")
 		return false, false
 	case ExtendedLinearAddress: //32 bit addr but only top 16 passed
 		length := converted[0]
@@ -113,7 +112,6 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 		elaAddr := uint32(converted[4])*256 + uint32(converted[5])
 		elaAddr = elaAddr << 16 //data supplied is high order 32
 		bb.SetBaseAddr(elaAddr)
-		print("#updating current base address to ", elaAddr, "\n")
 		return false, false
 	case ExtensionUnixTime: //32 bit int from epoch
 		length := converted[0]
@@ -123,7 +121,6 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 		}
 		t := uint32(converted[4])*0x1000000 + uint32(converted[5])*0x10000 + uint32(converted[6])*0x100 + uint32(converted[7])
 		bb.SetUnixTime(t)
-		print("#setting current time to unix ", t, "\n")
 		return false, false
 	case StartLinearAddress: //32 bit addr
 		length := converted[0]
@@ -339,6 +336,16 @@ func EncodeESA(base uint16) string {
 	buf.WriteString(fmt.Sprintf(":020000%02X%04X", int(ExtendedSegmentAddress), base))
 	raw := []byte{byte(base & 0xff00 >> 8), byte(base & 0x00ff)}
 	cs := createChecksum(raw, 0, ExtendedSegmentAddress)
+	buf.WriteString(fmt.Sprintf("%02X", cs))
+	return buf.String()
+}
+
+// this takes a 32bit int for unix time from epoch (1970)
+func EncodeExtensionUnixTime(t uint32) string {
+	buf := bytes.Buffer{}
+	buf.WriteString(fmt.Sprintf(":040000%02X%04X", int(ExtensionUnixTime), t))
+	raw := []byte{byte(t & 0xff000000 >> 24), byte(t & 0x00ff0000 >> 16), byte(t & 0x0000ff00 >> 8), byte(t & 0x000000ff)}
+	cs := createChecksum(raw, 0, ExtensionUnixTime)
 	buf.WriteString(fmt.Sprintf("%02X", cs))
 	return buf.String()
 }

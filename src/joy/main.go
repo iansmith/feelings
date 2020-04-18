@@ -4,14 +4,27 @@ import (
 	arm64 "feelings/src/hardware/arm-cortex-a53"
 	"feelings/src/joy/semihosting"
 	rt "feelings/src/tinygo_runtime"
-
-	"github.com/tinygo-org/tinygo/src/runtime"
 )
 
 func main() {
-	runtime.SetExternalRuntime(&rt.BaremetalRT{})
 	rt.MiniUART = rt.NewUART()
 	rt.MiniUART.Configure(rt.UARTConfig{RXInterrupt: true})
+
+	var exceptionLevelName string
+	Console.Logf("# Stage 1 kernel is running: Happiness")
+	Console.Logf("#   Unix time       %12d %16s: ", rt.BootArg0, exceptionLevelName)
+	Console.Logf("#   Boot address    %12x %16s: ", rt.BootArg1, exceptionLevelName)
+	switch rt.BootArg2 {
+	case 0:
+		exceptionLevelName = "(User)"
+	case 1:
+		exceptionLevelName = "(Kernel)"
+	case 2:
+		exceptionLevelName = "(Hypervisor)"
+	case 3:
+		exceptionLevelName = "(Secure Kernel)"
+	}
+	Console.Logf("#   Exception level %12d %16s: ", rt.BootArg2, exceptionLevelName)
 
 	//interrupts start as off
 	arm64.InitInterrupts()
@@ -43,5 +56,5 @@ func main() {
 				schedule();
 			}
 	*/
-	semihosting.Exit(37)
+	semihosting.Exit(0)
 }

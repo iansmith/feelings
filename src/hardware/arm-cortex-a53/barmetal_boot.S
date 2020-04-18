@@ -260,7 +260,13 @@ err_hang: b err_hang
 getSystemStackPointer:
 	mov sp,x0
 
+.global get_el
 get_el:
 	mrs x0, CurrentEL
 	lsr x0, x0, #2
 	ret
+
+.global ..getEl
+..getEl:
+    b get_el
+

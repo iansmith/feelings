@@ -108,14 +108,17 @@ type MetalByteBuster struct {
 }
 
 func (m *MetalByteBuster) SetEntryPoint(addr uint32) {
+	print("@ setting entry point of stage 1 to ", addr, "\n")
 	m.entryPoint = addr
 }
 
 func (m *MetalByteBuster) SetUnixTime(t uint32) {
+	print("@setting current time to unix ", t, "\n")
 	m.unixTime = t
 }
 
 func (m *MetalByteBuster) SetBaseAddr(addr uint32) {
+	print("@ setting base address for download to ", addr, "\n")
 	m.baseAdd = addr
 }
 

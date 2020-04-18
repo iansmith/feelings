@@ -9,6 +9,7 @@
 SECTIONS
 {
     . = 0x80000;
+    anticipation_addr = .;
     .text : ALIGN(0x1000) {
                 KEEP(*(.text.boot))
                 KEEP(*(.text))
