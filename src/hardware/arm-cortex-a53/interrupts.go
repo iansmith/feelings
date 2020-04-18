@@ -2,8 +2,6 @@ package arm_cortex_a53
 
 import (
 	"feelings/src/hardware/bcm2835"
-	rt "feelings/src/tinygo_runtime"
-
 	"github.com/tinygo-org/tinygo/src/device/arm"
 )
 
@@ -61,10 +59,8 @@ func unexpectedException(t uint64, esr uint64, addr uint64) {
 	print(entryErrorMessages[t])
 	print(", ESR ")
 	print(esr)
-	print(" -> ")
 	reason := esr >> 26
 	reason &= 0x3f
-	rt.MiniUART.Hex64string(reason)
 	switch reason {
 	case 0b000000:
 		print("[unknown reason]")

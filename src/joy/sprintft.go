@@ -1,4 +1,4 @@
-package main
+package joy
 
 import (
 	rt "feelings/src/tinygo_runtime"
@@ -6,7 +6,7 @@ import (
 
 // tricky: you can't use testing.T here because of the all the linker and assembly
 // shenanigans. You have to call this from the actual console code to do the test.
-func sprintfGoodCases() bool {
+func TestSprintfGoodCases() bool {
 	c := &ConsoleImpl{}
 	good := true
 	good = good && checkEquality(c.Sprintf("%d", 12), "12")

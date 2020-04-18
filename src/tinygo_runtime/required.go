@@ -65,3 +65,18 @@ func external_ticks() uint64 {
 func external_sleep_ticks(d uint64) {
 	return
 }
+
+//export:extalloc
+//func extalloc(size uintptr) unsafe.Pointer {
+//	last16 := size & 0xf
+//	if last16 != 0 {
+//		size += 16 - (last16)
+//	}
+//	addr := heapptr
+//	heapptr += size
+//	for i := uintptr(0); i < uintptr(size); i += 4 {
+//		ptr := (*uint32)(unsafe.Pointer(addr + i))
+//		*ptr = 0
+//	}
+//	return addr
+//}

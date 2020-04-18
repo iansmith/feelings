@@ -160,14 +160,24 @@ func processLine(line string) (bool, error) {
 		rt.MiniUART.WriteString("@ jumping to address ")
 		rt.MiniUART.Hex32string(metal.EntryPoint())
 		rt.MiniUART.WriteCR()
-		arm.AsmFull("mov x19, {t}", map[string]interface{}{"t": metal.UnixTime()})
-		arm.AsmFull("mov x20, {e}", map[string]interface{}{"e": metal.EntryPoint()})
-		arm.AsmFull("mov x21, {el}", map[string]interface{}{"el": getEl()})
-		arm.Asm("mov x22, xzr")
-		arm.Asm("mov x23, xzr")
-		arm.AsmFull("mov x8, {e}", map[string]interface{}{"e": metal.EntryPoint()})
-		arm.Asm("br x8")
+		arm64.MaskDAIF() //turn off interrupts while we boot up the kernel
+		ut := metal.UnixTime()
+		ep := metal.EntryPoint()
+		el := getEl()
+		jumpToNewKernel(ut, ep, uint32(el))
+
 	}
 	//keep going
 	return false, nil
+}
+
+func jumpToNewKernel(ut uint32, ep uint32, el uint32) {
+	arm.AsmFull("mov x19, {ut}", map[string]interface{}{"ut": ut})
+	arm.AsmFull("mov x20, {ep}", map[string]interface{}{"ep": ep})
+	arm.AsmFull("mov x21, {el}", map[string]interface{}{"el": el})
+	arm.Asm("mov x22, #0")
+	arm.Asm("mov x23, #0")
+	arm.Asm("mov x8, x20")
+	arm.Asm("br x8")
+
 }
