@@ -1,4 +1,4 @@
-package joy
+package happiness
 
 import (
 	rt "feelings/src/tinygo_runtime"

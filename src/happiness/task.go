@@ -1,4 +1,4 @@
-package joy
+package happiness
 
 import (
 	"feelings/src/hardware/rpi"

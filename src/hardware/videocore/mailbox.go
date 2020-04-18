@@ -1,8 +1,8 @@
 package videocore
 
 import (
+	"feelings/src/happiness/semihosting"
 	"feelings/src/hardware/rpi"
-	"feelings/src/joy/semihosting"
 	"unsafe"
 
 	"github.com/tinygo-org/tinygo/src/device/arm"
@@ -62,18 +62,18 @@ func Call(ch uint8, mboxBuffer *uint32) bool {
 	}
 	Mailbox.Write.Set(uint32(addrWithChannel))
 	//for i := 0; i < 20; i++ {
-	//	joy.Console.Logf("%x,%x\n	", rawPtr, addrWithChannel)
+	//	happiness.Console.Logf("%x,%x\n	", rawPtr, addrWithChannel)
 	//}
-	//joy.Console.Logf("wasting time so the mailbox won't feel in a hurry...")
+	//happiness.Console.Logf("wasting time so the mailbox won't feel in a hurry...")
 	for {
 		if Mailbox.Status.HasBits(MailboxEmpty) {
 			arm.Asm("nop")
 		} else {
 			read := Mailbox.Read.Get()
 			if read == uint32(addrWithChannel) {
-				//joy.Console.Logf("mailbox response\n")
+				//happiness.Console.Logf("mailbox response\n")
 				//for i := 0; i < len(mboxBuffer); i++ {
-				//	joy.Console.Logf("%d %04x\n", i, mboxBuffer[i].Get())
+				//	happiness.Console.Logf("%d %04x\n", i, mboxBuffer[i].Get())
 				//}
 				//did we get a confirm? we have to use volatile here because we
 				//could not guarantee alignment if we used volatile.Register32()
@@ -169,14 +169,14 @@ func slotOffset(ptr32 *uint32, slot int) *uint32 {
 //the default allocator only ollocates things at their "natural" sizes
 func sixteenByteAlignedPointer(size uintptr) *uint64 {
 	units := (((size / 16) + 1) * 16) / 8
-	//joy.Console.Logf("%x,%x", size, units)
+	//happiness.Console.Logf("%x,%x", size, units)
 	bigger := make([]uint64, units)
 	hackFor16ByteAlignment := ((*uint64)(unsafe.Pointer(&bigger[0])))
 	ptr := uintptr(unsafe.Pointer(hackFor16ByteAlignment))
 	if ptr&0xf != 0 {
 		diff := uintptr(16 - (ptr & 0xf))
 		hackFor16ByteAlignment = ((*uint64)(unsafe.Pointer(ptr + diff)))
-		//joy.Console.Logf("alignment hack: %8x,%x,%x", ptr, diff, uintptr(unsafe.Pointer(hackFor16ByteAlignment)))
+		//happiness.Console.Logf("alignment hack: %8x,%x,%x", ptr, diff, uintptr(unsafe.Pointer(hackFor16ByteAlignment)))
 	}
 	return hackFor16ByteAlignment
 }
