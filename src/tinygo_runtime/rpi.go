@@ -138,6 +138,7 @@ func (uart *UART) Configure(conf UARTConfig) error {
 //
 // Writing a byte over serial.  Blocking.
 //
+//go:noinline
 func (uart UART) WriteByte(c byte) error {
 	// wait until we can send
 	for {

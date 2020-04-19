@@ -202,10 +202,6 @@ _start:
 	adr x8, err_hang
 	br x8
 
-.globl semihosting_param_block
-semihosting_param_block:
-.space 16
-
 .align(11)
 err_hang: b err_hang
 

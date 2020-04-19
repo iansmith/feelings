@@ -1,8 +1,8 @@
 package videocore
 
 import (
-	"feelings/src/happiness/semihosting"
 	"feelings/src/hardware/rpi"
+	"feelings/src/lib/semihosting"
 	"unsafe"
 
 	"github.com/tinygo-org/tinygo/src/device/arm"
@@ -34,6 +34,7 @@ const MailboxTagFirmwareVersion = 0x1
 const MailboxTagBoardModel = 0x00010001
 const MailboxTagBoardRevision = 0x00010002
 const MailboxTagMACAddress = 0x00010003
+const MailboxTagGetClockRate = 0x00030002
 const MailboxTagLast = 0x0
 
 type MailboxRegisterMap struct {
@@ -86,11 +87,11 @@ func Call(ch uint8, mboxBuffer *uint32) bool {
 }
 
 func BoardID() (uint64, bool) {
-	return boardInfoNoParams(MailboxTagSerial, 2)
+	return MessageNoParams(MailboxTagSerial, 2)
 }
 
 func FirmwareVersion() (uint32, bool) {
-	firmware, ok := boardInfoNoParams(MailboxTagFirmwareVersion, 1)
+	firmware, ok := MessageNoParams(MailboxTagFirmwareVersion, 1)
 	if !ok {
 		return 0x872720, ok
 	}
@@ -98,7 +99,7 @@ func FirmwareVersion() (uint32, bool) {
 }
 
 func BoardModel() (uint32, bool) {
-	model, ok := boardInfoNoParams(MailboxTagBoardModel, 1)
+	model, ok := MessageNoParams(MailboxTagBoardModel, 1)
 	if !ok {
 		return 0x872728, ok
 	}
@@ -106,7 +107,7 @@ func BoardModel() (uint32, bool) {
 }
 
 func BoardRevision() (uint32, bool) {
-	revision, ok := boardInfoNoParams(MailboxTagBoardRevision, 1)
+	revision, ok := MessageNoParams(MailboxTagBoardRevision, 1)
 	if !ok {
 		return 0x872727, ok
 	}
@@ -114,7 +115,7 @@ func BoardRevision() (uint32, bool) {
 }
 
 func MACAddress() (uint64, bool) {
-	addr, ok := boardInfoNoParams(MailboxTagMACAddress, 2)
+	addr, ok := MessageNoParams(MailboxTagMACAddress, 2)
 	if !ok {
 		return 0xab127348, false
 	}
@@ -122,7 +123,7 @@ func MACAddress() (uint64, bool) {
 	return addr, true
 }
 
-func boardInfoNoParams(tag uint32, responseSlots int) (uint64, bool) {
+func MessageNoParams(tag uint32, responseSlots int) (uint64, bool) {
 	buffer := message(0, tag, 2)
 	ok := Call(MailboxChannelProperties, buffer)
 	if !ok {
@@ -160,6 +161,25 @@ func message(requestSlots int, tag uint32, responseSlots int) *uint32 {
 	*slotOffset(ptr32, 4+responseSlots+requestSlots+1) = MailboxTagLast //end
 	return ptr32
 }
+
+// this returns the ARM clock rate, which can vary based on the underlying
+// system clock speed
+func GetClockRate() (uint32, bool) {
+	buffer := message(0, MailboxTagGetClockRate, 2)
+	*slotOffset(buffer, 5) = 0x4
+	*slotOffset(buffer, 6) = 0x0
+	dumpMessage(buffer, 8)
+	ok := Call(MailboxChannelProperties, buffer)
+	dumpMessage(buffer, 8)
+	if !ok {
+		return 79083, false //strange constant so it is easy to find
+	}
+	if *slotOffset(buffer, 5) != 4 {
+		return 79084, false
+	}
+	return *slotOffset(buffer, 6), true
+}
+
 func slotOffset(ptr32 *uint32, slot int) *uint32 {
 	newptr := uintptr(unsafe.Pointer(ptr32)) + uintptr(4*slot)
 	return (*uint32)(unsafe.Pointer(newptr))
@@ -179,4 +199,11 @@ func sixteenByteAlignedPointer(size uintptr) *uint64 {
 		//happiness.Console.Logf("alignment hack: %8x,%x,%x", ptr, diff, uintptr(unsafe.Pointer(hackFor16ByteAlignment)))
 	}
 	return hackFor16ByteAlignment
+}
+
+func dumpMessage(ptr *uint32, numSlots int) {
+	print("message dump")
+	for i := 0; i < numSlots; i++ {
+		print(i, ",", *slotOffset(ptr, i), "\n")
+	}
 }

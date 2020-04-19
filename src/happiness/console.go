@@ -215,13 +215,13 @@ func SystemTime() uint64 {
 	var l uint32
 
 	// the reads from system timer are two separate 32 bit reads
-	h = bcm2835.SysTimer.CounterHigher32.Get()
-	l = bcm2835.SysTimer.CounterLower32.Get()
+	h = bcm2835.SysTimer.FreeRunningLower32.Get()
+	l = bcm2835.SysTimer.FreeRunningHigher32.Get()
 	//the read of hi can fail
-	again := bcm2835.SysTimer.CounterHigher32.Get()
+	again := bcm2835.SysTimer.FreeRunningHigher32.Get()
 	if h != again {
-		h = bcm2835.SysTimer.CounterHigher32.Get()
-		l = bcm2835.SysTimer.CounterLower32.Get()
+		h = bcm2835.SysTimer.FreeRunningHigher32.Get()
+		l = bcm2835.SysTimer.FreeRunningLower32.Get()
 	}
 	high := uint64(h << 32)
 	return high | uint64(l)

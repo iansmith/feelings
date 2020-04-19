@@ -23,8 +23,10 @@ var entryPoint uint32 = signalValue
 
 var metal *anticipation.MetalByteBuster
 
+const interval = 0x100000
+
 func wait() {
-	amount := 150000000
+	amount := 1500000000
 	if started {
 		amount = 150000
 	}
@@ -43,27 +45,45 @@ func main() {
 
 	rt.MiniUART = rt.NewUART()
 	rt.MiniUART.Configure(rt.UARTConfig{RXInterrupt: true})
-	rt.MiniUART.WriteString("OK1\n")
+
 	//interrupts start as off
-	arm64.InitInterrupts()
+	arm64.InitExceptionVector()
 	//all interrupts are "unexpected" until we set this
-	arm64.SetExceptionHandlerEl1hInterrupts(miniUARTReceive)
+	arm64.SetExceptionHandlerEl1hInterrupts(interruptReceive)
+
+	currentValue := bcm2835.SysTimer.FreeRunningLower32.Get() //only using 32 bits
+	currentValue += 5 * interval
+	bcm2835.SysTimer.Compare1.Set(currentValue)
+
+	//do we need to clear it this early?
+	//bcm2835.SysTimer.ControlStatus.SetBits(bcm2835.SystemTimerMatch1)
 
 	//tell the interrupt controller what we want and then unmask interrupts
-	bcm2835.InterruptController.EnableIRQs1.SetBits(bcm2835.AuxInterrupt)
+	//bcm2835.InterruptController.EnableIRQs1.SetBits(bcm2835.AuxInterrupt | bcm2835.SystemTimerIRQ1)
+	//bcm2835.InterruptController.EnableIRQs1.SetBits(bcm2835.SystemTimerIRQ1)
+
+	//init timer interrupt via controller
+	bcm2835.InterruptController.EnableIRQs1.SetBits(bcm2835.SystemTimerIRQ1)
+
 	arm64.UnmaskDAIF()
 	for {
-		arm64.MaskDAIF()
+		//arm64.MaskDAIF()
 		if started {
 			//we leave this loop with interrupts OFF
 			break
 		}
-		arm64.UnmaskDAIF()
+		//arm64.UnmaskDAIF()
 		rt.MiniUART.WriteString(".")
 		rt.MiniUART.WriteByte('\n')
 		wait()
-		arm64.MaskDAIF()
-
+		currentValue := bcm2835.SysTimer.FreeRunningLower32.Get() //only using 32 bits
+		rt.MiniUART.Hex32string(currentValue)
+		target := bcm2835.SysTimer.Compare1.Get()
+		rt.MiniUART.Hex32string(target)
+		isr := bcm2835.InterruptController.IRQPending1.Get()
+		rt.MiniUART.Hex32string(isr)
+		rt.MiniUART.WriteString("\n\r")
+		//arm64.MaskDAIF()
 	}
 
 	rt.MiniUART.WriteString("#\n")
@@ -92,10 +112,13 @@ func main() {
 	}
 }
 
-func miniUARTReceive(t uint64, esr uint64, addr uint64) {
+//go:noinline
+func interruptReceive(t uint64, esr uint64, addr uint64) {
+	rt.MiniUART.WriteString("interruptReceive\n")
+	switch {
 	//this ignores the possibility that HasBits(6) because docs (!)
 	//say that bits 2 and 1 cannot both be set, so we just check bit 2
-	if bcm2835.Aux.MiniUARTInterruptIdentify.HasBits(4) {
+	case bcm2835.Aux.MiniUARTInterruptIdentify.HasBits(4):
 		for {
 			if !bcm2835.Aux.MiniUARTLineStatus.HasBits(bcm2835.ReceiveFIFOReady) {
 				break
@@ -117,9 +140,12 @@ func miniUARTReceive(t uint64, esr uint64, addr uint64) {
 				rt.MiniUART.LoadRx(ch) //put it in the receive buffer
 			}
 		}
-	} else {
-		rt.MiniUART.WriteString("#Expected RX interrupt, but none found!")
-		rt.MiniUART.WriteByte('\n')
+	case bcm2835.InterruptController.IRQPending1.HasBits(bcm2835.SystemTimerIRQ1):
+		bcm2835.SysTimer.ControlStatus.SetBits(bcm2835.SystemTimerMatch1)
+		rt.MiniUART.WriteString("# Timer interrupt received\n")
+
+	default:
+		rt.MiniUART.WriteString("# Expected RX or Timer interrupt, but none found!\n")
 	}
 }
 

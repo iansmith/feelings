@@ -2,9 +2,9 @@ package main
 
 import (
 	"feelings/src/happiness"
-	"feelings/src/happiness/semihosting"
 	arm64 "feelings/src/hardware/arm-cortex-a53"
 	"feelings/src/hardware/videocore"
+	"feelings/src/lib/semihosting"
 	rt "feelings/src/tinygo_runtime"
 	"strings"
 )
@@ -68,7 +68,7 @@ func main() {
 		happiness.Console.Logf("# %16s : %s ", "MAC Address", printableMAC)
 	}
 	//interrupts start as off
-	arm64.InitInterrupts()
+	arm64.InitExceptionVector()
 	happiness.TestSprintfGoodCases()
 	/*
 		bcm2835.InterruptController.EnableTimer()

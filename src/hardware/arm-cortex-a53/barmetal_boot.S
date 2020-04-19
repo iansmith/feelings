@@ -270,3 +270,8 @@ get_el:
 ..getEl:
     b get_el
 
+.globl semihosting.semihosting_call
+semihosting.semihosting_call:
+	hlt 0xf000
+	ret
+

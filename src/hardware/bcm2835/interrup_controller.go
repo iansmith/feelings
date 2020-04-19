@@ -17,3 +17,12 @@ type IRQRegisterMap struct {
 
 // for the interrupt numbers for use with interrupt controller
 const AuxInterrupt = 1 << 29
+
+// for the 4 clocks
+const systemTimerIRQReserved0 = 1 << 0
+const systemTimerIRQReserved2 = 1 << 2
+
+const SystemTimerIRQ1 = 1 << 1
+const SystemTimerIRQ3 = 1 << 3
+
+const BasicArmTimerIRQ = 1 << 0
