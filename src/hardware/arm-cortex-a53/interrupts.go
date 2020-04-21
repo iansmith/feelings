@@ -15,12 +15,12 @@ var excptrs [16]exceptionHandler
 
 // MaskDAIF sets the value of the four D-A-I-F interupt masking on the ARM
 func MaskDAIF() {
-	arm.Asm("msr    daifset, #0xf")
+	arm.Asm("msr    daifset, #0x2")
 }
 
 // UnmaskDAIF sets the value of the four D-A-I-F interupt masking on the ARM
 func UnmaskDAIF() {
-	arm.Asm("msr    daifclr, #0xf")
+	arm.Asm("msr    daifclr, #0x2")
 }
 
 //go:extern vectors

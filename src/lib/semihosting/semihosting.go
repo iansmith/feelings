@@ -43,6 +43,7 @@ func Exit(code uint64) {
 	*((*uint64)(ptr)) = uint64(SemihostingStopApplicationExit)
 	ptr = unsafe.Pointer(uintptr(ptr) + 0x8)
 	*((*uint64)(ptr)) = code
+	ptr = unsafe.Pointer(uintptr(ptr) - 0x8) //point to start of block
 	semihosting_call(uint64(SemiHostOpExit), uint64(uintptr(ptr)))
 }
 
