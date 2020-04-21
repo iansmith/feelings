@@ -3,19 +3,20 @@ package anticipation
 import (
 	"bytes"
 	"fmt"
+	"log"
 )
 
-//neds to be all 1s
-const FileXFerDataLineSize = uint16(0x1ff)
+//neds to be all 1s on right, can't be larger than 255
+const FileXFerDataLineSize = uint16(0x3f)
 
-type DecodeError struct {
+type EncodeDecodeError struct {
 	s string
 }
 
-func NewDecodeError(s string) error {
-	return &DecodeError{s}
+func NewEncodeDecodeError(s string) error {
+	return &EncodeDecodeError{s}
 }
-func (d *DecodeError) Error() string {
+func (d *EncodeDecodeError) Error() string {
 	return d.s
 }
 
@@ -137,15 +138,36 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 	return false, true
 }
 
+// take in a string and return either an exception or a
+func DecodeAndCheckStringToBytes(s string) ([]byte, HexLineType, uint32, error) {
+	lenAs16 := uint16(len(s))
+	converted := ConvertBuffer(lenAs16, []byte(s))
+	var addr uint32
+	lt, ok := ExtractLineType(converted)
+	if !ok {
+		return nil, DataLine, 0, NewEncodeDecodeError(fmt.Sprintf("unable to extract line type from: %s", s))
+	}
+	if lt == DataLine {
+		addr = (uint32(converted[1]) * 256) + (uint32(converted[2]))
+	}
+	if ok := ValidBufferLength(lenAs16, converted); ok == false {
+		return nil, lt, addr, NewEncodeDecodeError(fmt.Sprintf("expected buffer length to be ok, but wasn't: %s", s))
+	}
+	if ok := CheckChecksum(lenAs16, converted); ok == false {
+		return nil, lt, addr, NewEncodeDecodeError(fmt.Sprintf("expected checksum to be ok, but wasn't:%s", s))
+	}
+	return converted, lt, addr, nil
+}
+
 // received a line, check that it has a hope of being syntactically correct
-func ValidBufferLength(l int, converted []byte) bool {
-	total := uint8(11) //size of just framing in characters (colon, 2 len chars, 4 addr chars, 2 type chars, 2 checksum chars)
-	if uint8(l) < total {
+func ValidBufferLength(l uint16, converted []byte) bool {
+	total := uint16(11) //size of just framing in characters (colon, 2 len chars, 4 addr chars, 2 type chars, 2 checksum chars)
+	if uint16(l) < total {
 		print("!bad buffer length, can't be smaller than", total, ":", l, "\n")
 		return false
 	}
-	total += converted[0] * 2
-	if uint8(l) != total {
+	total += uint16(converted[0]) * 2
+	if l != total {
 		print("!bad buffer length, expected", total, "but got", l, " based on ", converted[0], "\n")
 		return false
 	}
@@ -153,10 +175,10 @@ func ValidBufferLength(l int, converted []byte) bool {
 }
 
 // verify line's checksum
-func CheckChecksum(l int, converted []byte) bool {
+func CheckChecksum(l uint16, converted []byte) bool {
 	sum := uint64(0)
 	limit := (l - 1) / 2
-	for i := 0; i < limit; i++ {
+	for i := uint16(0); i < limit; i++ {
 		sum += uint64(converted[i])
 	}
 	complement := ^sum
@@ -194,19 +216,15 @@ func ExtractLineType(converted []byte) (HexLineType, bool) {
 }
 
 // change buffer of ascii->converted bytes by taking the ascii values (2 per byte) and making them proper bytes
-func ConvertBuffer(l int, raw []byte) []byte {
+func ConvertBuffer(l uint16, raw []byte) []byte {
 	//l-1 because the : is skipped so the remaining number of characters must be even
 	if (l-1)%2 == 1 {
-		print("!bad payload, expected even number of hex bytes (%d):", l)
-		for i := 0; i < l; i++ {
-			print(i, "=", raw[i], " ")
-		}
-		print("\n")
+		print("!bad payload, expected even number of hex bytes but got:", l-1, "\n")
 		return nil
 	}
-	converted := make([]byte, l)
+	converted := make([]byte, (l-1)/2)
 	//skip first colon
-	for i := 1; i < l; i += 2 {
+	for i := uint16(1); i < l; i += 2 {
 		v, ok := bufferValue(i, raw)
 		if !ok {
 			return nil // they already sent the error to the other side
@@ -218,7 +236,8 @@ func ConvertBuffer(l int, raw []byte) []byte {
 
 // this hits buffer[i] and buffer[i+1] to convert an ascii byte
 // returns false to mean you had a bad character in the input
-func bufferValue(i int, buffer []byte) (uint8, bool) {
+func bufferValue(index uint16, buffer []byte) (uint8, bool) {
+	i := int(index)
 	total := uint8(0)
 	switch buffer[i] {
 	case '0':
@@ -300,6 +319,10 @@ func bufferValue(i int, buffer []byte) (uint8, bool) {
 ///////////////////////////////////////////////////////////////////////////////////
 
 func EncodeDataBytes(raw []byte, offset uint16) string {
+	if len(raw) > 255 {
+		log.Fatalf("intel hex format only allows 2 hex characters for the size\n"+
+			"of a data buffer, it can't be more than 0xff bytes (you have %x)", len(raw))
+	}
 	buf := bytes.Buffer{}
 	buf.WriteString(fmt.Sprintf(":%02X%04X%02X", len(raw), offset, int(DataLine)))
 	for _, b := range raw {

@@ -150,3 +150,51 @@ func (m *MetalByteBuster) Write(addr uint32, value uint8) bool {
 func (m *MetalByteBuster) EntryPointIsSet() bool {
 	return m.entryPoint != entryPointSentinal
 }
+
+/////////////////////////////////////////////////////////////////////////
+// NullByteBuster
+////////////////////////////////////////////////////////////////////////
+type nullByteBuster struct {
+	unixTime   uint32
+	addr       uint32
+	entryPoint uint32
+}
+
+func (n *nullByteBuster) SetEntryPoint(addr uint32) {
+	n.entryPoint = addr
+}
+
+func (n *nullByteBuster) SetUnixTime(t uint32) {
+	n.unixTime = t
+}
+
+func (n *nullByteBuster) SetBaseAddr(addr uint32) {
+	n.addr = addr
+}
+
+func NewNullByteBuster() *nullByteBuster {
+	bb := &nullByteBuster{
+		entryPoint: entryPointSentinal,
+	}
+	return bb
+}
+
+func (n *nullByteBuster) EntryPointIsSet() bool {
+	return n.entryPoint != entryPointSentinal
+}
+
+func (n *nullByteBuster) BaseAddress() uint32 {
+	return n.addr
+}
+
+func (n *nullByteBuster) EntryPoint() uint32 {
+	return n.entryPoint
+}
+
+func (n *nullByteBuster) UnixTime() uint32 {
+	return n.unixTime
+}
+
+func (f *nullByteBuster) Write(addr uint32, value uint8) bool {
+	return true
+}

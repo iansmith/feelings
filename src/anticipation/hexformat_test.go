@@ -47,29 +47,19 @@ func TestEndToEnd(t *testing.T) {
 	}
 	checkAllAndProcess(t, entryPoint, StartLinearAddress, bb, 0xFC0A0000, false) //unchanged after a data line
 	if !bb.EntryPointIsSet() {
-		t.Logf("we setthe entry point with an SLA but it is not visible in EntryPointIsSet")
+		t.Errorf("we set the entry point with an SLA but it is not visible in EntryPointIsSet")
 	}
-	if bb.EntryPoint() != 0xCD0000 {
-		t.Logf("expected entry point 0xCD because of SLA but got %8x", bb.EntryPoint())
+	if bb.EntryPoint() != 0xCD {
+		t.Errorf("expected entry point 0xCD because of SLA but got %08x", bb.EntryPoint())
 	}
 }
 
 func checkAllAndProcess(t *testing.T, t1 string, hlt HexLineType, bb *fakeByteBuster, finalBase uint32, bytesChanged bool) {
 	t.Helper()
-	converted := ConvertBuffer(len(t1), []byte(t1))
-	if len(converted) == 0 {
-		t.Errorf("no converted results")
-		t.FailNow()
-	}
-	lt, ok := ExtractLineType(converted)
-	if !checkLineType(t, lt, ok, hlt, true) {
+	converted, lt, _, err := DecodeAndCheckStringToBytes(t1)
+	if err != nil {
+		t.Errorf("unable to decode string %s: %v", t1, err)
 		return
-	}
-	if ok := ValidBufferLength(len(t1), converted); ok == false {
-		t.Error("expected buffer length to be ok, but wasn't")
-	}
-	if ok := CheckChecksum(len(t1), converted); ok == false {
-		t.Error("expected checksum to be ok, but wasn't")
 	}
 	hadError, isEnd := ProcessLine(lt, converted, bb)
 	if hadError {
@@ -90,8 +80,8 @@ func checkAllAndProcess(t *testing.T, t1 string, hlt HexLineType, bb *fakeByteBu
 
 func TestBadChecksum(t *testing.T) {
 	bcs := ":10010000214601360121470136007EFE09D2190149"
-	converted := ConvertBuffer(len(bcs), []byte(bcs))
-	if CheckChecksum(len(bcs), converted) {
+	converted := ConvertBuffer(uint16(len(bcs)), []byte(bcs))
+	if CheckChecksum(uint16(len(bcs)), converted) {
 		t.Errorf("expected to have a bad checksum, but didn't")
 	}
 
@@ -99,7 +89,7 @@ func TestBadChecksum(t *testing.T) {
 
 func TestMissingChar(t *testing.T) {
 	mc := ":10010000214601360121470136007EFE09D190140"
-	converted := ConvertBuffer(len(mc), []byte(mc))
+	converted := ConvertBuffer(uint16(len(mc)), []byte(mc))
 	if converted != nil {
 		t.Errorf("expected to have a bad conversion input length because removed a '2', but didn't")
 	}
@@ -107,8 +97,8 @@ func TestMissingChar(t *testing.T) {
 
 func TestAddressTooLow(t *testing.T) {
 	atl := ":020000021200EA"
-	converted := ConvertBuffer(len(atl), []byte(atl))
-	if !ValidBufferLength(len(atl), converted) {
+	converted := ConvertBuffer(uint16(len(atl)), []byte(atl))
+	if !ValidBufferLength(uint16(len(atl)), converted) {
 		t.Errorf("expected to have ok buffer length, courtesy of wikipedia")
 	}
 
@@ -116,7 +106,7 @@ func TestAddressTooLow(t *testing.T) {
 
 func checkPerfectLine(t *testing.T, t1 string, ltype HexLineType) {
 	t.Helper()
-	converted := ConvertBuffer(len(t1), []byte(t1))
+	converted := ConvertBuffer(uint16(len(t1)), []byte(t1))
 
 	if converted == nil {
 		t.Error("expected t1 to convert correctly (from wikipedia)")
@@ -126,10 +116,10 @@ func checkPerfectLine(t *testing.T, t1 string, ltype HexLineType) {
 	if !checkLineType(t, lt, ok, ltype, true) {
 		return
 	}
-	if ok := ValidBufferLength(len(t1), converted); ok == false {
+	if ok := ValidBufferLength(uint16(len(t1)), converted); ok == false {
 		t.Error("expected buffer length to be ok, but wasn't")
 	}
-	if ok := CheckChecksum(len(t1), converted); ok == false {
+	if ok := CheckChecksum(uint16(len(t1)), converted); ok == false {
 		t.Error("expected checksum to be ok, but wasn't")
 	}
 }

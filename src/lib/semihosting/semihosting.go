@@ -26,7 +26,7 @@ const (
 	SemihostingStopOSSpecific          SemihostingStopCode = 0x20029
 )
 
-//go:extern semihosting_param_block
+//go:linkname semihosting_param_block semihosting.semihosting_param_block
 var semihosting_param_block uint64
 
 //semihosting_call (the second param may be a value or a pointer)
@@ -35,26 +35,7 @@ var semihosting_param_block uint64
 func semihosting_call(op uint64, param uint64) uint64
 
 //
-////go:noinline
-//func semihostCommand(op uint64, param uint64) uint64 {
-//	arm.AsmFull("mov x0,{op}\n"+
-//		"mov x1,{param}", map[string]interface{}{"op": op, "param": param})
-//	arm.Asm("hlt 0xF000")
-//	var r uint64
-//	arm.AsmFull("mov {r},x0", map[string]interface{}{"r": r})
-//	return r
-//}
-//
-////go:noinline
-//func semihostCommandWithParams(op uint64, param uintptr) uint64 {
-//	arm.AsmFull("mov x0,{op}\n"+
-//		"mov x1,{param}", map[string]interface{}{"op": op, "param": param})
-//	arm.Asm("hlt 0xF000")
-//	var r uint64
-//	arm.AsmFull("mov {r},x0", map[string]interface{}{"r": r})
-//
-//	return r
-//}
+// Exit and pass this code as result to OS.
 //
 func Exit(code uint64) {
 	//arm.Asm("str     x30, [sp, #-32]!")
@@ -63,18 +44,10 @@ func Exit(code uint64) {
 	ptr = unsafe.Pointer(uintptr(ptr) + 0x8)
 	*((*uint64)(ptr)) = code
 	semihosting_call(uint64(SemiHostOpExit), uint64(uintptr(ptr)))
-	//semihostCommandWithParams(uint64(SemiHostOpExit), uintptr(unsafe.Pointer(uintptr(ptr)-0x8)))
-	//arm.Asm("ldr     x30, [sp, #32]")
 }
 
-//go:noinline
+// Returns number of centiseconds since program started
 func Clock() uint64 {
-	//arm.Asm("str     x30, [sp, #-32]!")
-	//semihostCommand(uint64(SemiHostOpClock), 0)
 	x := semihosting_call(uint64(SemiHostOpClock), 0)
 	return x
-	//var r int64
-	//arm.AsmFull("mov {r},x0", map[string]interface{}{"r": r})
-	//arm.Asm("ldr     x30, [sp, #32]")
-	//return r
 }

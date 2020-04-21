@@ -123,16 +123,16 @@ func MACAddress() (uint64, bool) {
 	return addr, true
 }
 
-func MessageNoParams(tag uint32, responseSlots int) (uint64, bool) {
+func MessageNoParams(tag uint32, reqRespSlots int) (uint64, bool) {
 	buffer := message(0, tag, 2)
 	ok := Call(MailboxChannelProperties, buffer)
 	if !ok {
 		return 77281, false //strange constant so it is easy to find
 	}
-	if responseSlots == 1 {
+	if reqRespSlots == 1 {
 		return uint64(*slotOffset(buffer, 5)), true
 	}
-	if responseSlots == 2 {
+	if reqRespSlots == 2 {
 		upper := uint64((*slotOffset(buffer, 6) << 32))
 		lower := uint64((*slotOffset(buffer, 5)))
 		return upper + lower, true
@@ -189,14 +189,12 @@ func slotOffset(ptr32 *uint32, slot int) *uint32 {
 //the default allocator only ollocates things at their "natural" sizes
 func sixteenByteAlignedPointer(size uintptr) *uint64 {
 	units := (((size / 16) + 1) * 16) / 8
-	//happiness.Console.Logf("%x,%x", size, units)
 	bigger := make([]uint64, units)
 	hackFor16ByteAlignment := ((*uint64)(unsafe.Pointer(&bigger[0])))
 	ptr := uintptr(unsafe.Pointer(hackFor16ByteAlignment))
 	if ptr&0xf != 0 {
 		diff := uintptr(16 - (ptr & 0xf))
 		hackFor16ByteAlignment = ((*uint64)(unsafe.Pointer(ptr + diff)))
-		//happiness.Console.Logf("alignment hack: %8x,%x,%x", ptr, diff, uintptr(unsafe.Pointer(hackFor16ByteAlignment)))
 	}
 	return hackFor16ByteAlignment
 }

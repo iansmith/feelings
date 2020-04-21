@@ -209,3 +209,7 @@ err_hang: b err_hang
 getSystemStackPointer:
 	mov sp,x0
 
+.globl semihosting.semihosting_call
+semihosting.semihosting_call:
+	hlt 0xf000
+	ret

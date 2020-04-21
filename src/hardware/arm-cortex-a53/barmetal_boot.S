@@ -177,6 +177,8 @@ error_el0_32:
 
 .section ".text.boot"
 .globl _start
+.extern main
+
 _start:
 	mov x0, #0x760
 	lsl x0,x0,#8
@@ -245,9 +247,8 @@ el1_entry:
 	mov     sp, x1
 	mov     x30,xzr
 
-	//can't branch and link here because the stack and link are in a bad state
 	adr x8, main
-	br x8
+	blr x8
 
 	adr x8, err_hang
 	br x8

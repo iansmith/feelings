@@ -1,9 +1,9 @@
-all: clean kernel8.img
+all: clean kernel8.img ../../../../tinygo_conf/assembly/baremetal_boot.o
 
 # we use the bare metal linker script for the bootloader
 antc: *.go
-	clang --target=aarch64-elf -c -o ../../../../tinygo_conf/assembly/baremetal_boot.o ../../../hardware/arm-cortex-a53/barmetal_boot.S
-	tinygo build -target ../../../../tinygo_conf/rpi3.json -ldflags='../../../../tinygo_conf/assembly/baremetal_boot.o -T ../../../../tinygo_conf/rpi3.ld' -o antc .
+	clang --target=aarch64-elf -mno-unaligned-access -c -o ../../../../tinygo_conf/assembly/baremetal_boot.o ../../../hardware/arm-cortex-a53/barmetal_boot.S
+	tinygo build -opt s -cflags='-mno-unaligned-access' -target  ../../../../tinygo_conf/rpi3.json -ldflags='../../../../tinygo_conf/assembly/baremetal_boot.o -T ../../../../tinygo_conf/rpi3.ld' -o antc .
 
 clean:
 	rm antc kernel8.img *.o >/dev/null 2>/dev/null || true
