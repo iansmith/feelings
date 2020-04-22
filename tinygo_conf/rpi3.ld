@@ -44,4 +44,4 @@ SECTIONS
 }
 
 _heap_start = 0x1f000000;
-_heap_end = 0x20000000;
+_heap_end = 0x40000000;

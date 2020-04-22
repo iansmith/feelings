@@ -22,15 +22,15 @@ func Abort(s string) {
 //go:export WaitMuSec
 func WaitMuSec(n uint64) {
 	var f, t, r uint64
-	arm.AsmFull(`mrs x28, cntfrq_el0
-		str x28,{f}
-		mrs x27, cntpct_el0
-		str x27,{t}`, map[string]interface{}{"f": &f, "t": &t})
+	arm.AsmFull(`mrs x0, cntfrq_el0
+		str x0,{f}
+		mrs x1, cntpct_el0
+		str x1,{t}`, map[string]interface{}{"f": &f, "t": &t})
 	//expires at t
 	t += ((f / 1000) * n) / 1000
 	for r < t {
-		arm.AsmFull(`mrs x27, cntpct_el0
-			str x27,{r}`, map[string]interface{}{"r": &r})
+		arm.AsmFull(`mrs x1, cntpct_el0
+			str x1,{r}`, map[string]interface{}{"r": &r})
 	}
 }
 

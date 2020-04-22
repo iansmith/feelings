@@ -47,7 +47,7 @@ type MailboxRegisterMap struct {
 	Write    volatile.Register32    //0x20
 }
 
-func Call(ch uint8, mboxBuffer *uint32) bool {
+func Call(ch uint8, mboxBuffer *sequenceOfSlots) bool {
 	mask := uintptr(^uint64(0xf))
 	rawPtr := uintptr(unsafe.Pointer(mboxBuffer))
 	if rawPtr&0xf != 0 {
@@ -78,7 +78,7 @@ func Call(ch uint8, mboxBuffer *uint32) bool {
 				//}
 				//did we get a confirm? we have to use volatile here because we
 				//could not guarantee alignment if we used volatile.Register32()
-				return volatile.LoadUint32(slotOffset((*uint32)(unsafe.Pointer(rawPtr)), 1)) == MailboxResponse
+				return mboxBuffer.s[1].Get() == MailboxResponse
 			}
 		}
 	}
@@ -119,26 +119,57 @@ func MACAddress() (uint64, bool) {
 	if !ok {
 		return 0xab127348, false
 	}
+
 	addr &= 0x0000ffffffffffffffff
 	return addr, true
 }
 
 func MessageNoParams(tag uint32, reqRespSlots int) (uint64, bool) {
-	buffer := message(0, tag, 2)
-	ok := Call(MailboxChannelProperties, buffer)
-	if !ok {
-		return 77281, false //strange constant so it is easy to find
+	seq := message(0, tag, 2)
+	if !Call(MailboxChannelProperties, seq) {
+		return 77281, false
 	}
 	if reqRespSlots == 1 {
-		return uint64(*slotOffset(buffer, 5)), true
+		return uint64(seq.s[5].Get()), true
 	}
 	if reqRespSlots == 2 {
-		upper := uint64((*slotOffset(buffer, 6) << 32))
-		lower := uint64((*slotOffset(buffer, 5)))
+		upper := uint64(seq.s[6].Get() << 32)
+		lower := uint64(seq.s[5].Get())
 		return upper + lower, true
 	}
 	panic("too many response slots")
 }
+
+type sequenceOfSlots struct {
+	s [8]volatile.Register32
+}
+
+//var seq sequenceOfSlots
+
+func message(requestSlots int, tag uint32, responseSlots int) *sequenceOfSlots {
+
+	totalSlots := uint32(1 + 1 + 1 + requestSlots + 1 + 1 + responseSlots + 1)
+	larger := responseSlots
+	if requestSlots > larger {
+		larger = requestSlots
+	}
+	ptr := sixteenByteAlignedPointer(uintptr(totalSlots << 2)) //32 bit slots
+	ptr32 := ((*uint32)(unsafe.Pointer(ptr)))
+	seq:=(*sequenceOfSlots)(unsafe.Pointer(ptr32))
+
+
+	seq.s[0].Set(4 * totalSlots) //bytes of total size
+	seq.s[1].Set(MailboxRequest)
+	seq.s[2].Set(tag)
+	seq.s[3].Set(uint32(larger) * 4)
+	seq.s[4].Set(0) //request
+	//s5...s5+larger-1 will be the outgoing data
+	next := 5 + larger
+	seq.s[next].Set(MailboxTagLast)
+	return seq
+}
+
+/*
 
 // fill out the message fields for a request but does NOT fill in the
 // request fields, so can only be used by itself for requests with no args
@@ -160,24 +191,22 @@ func message(requestSlots int, tag uint32, responseSlots int) *uint32 {
 	}
 	*slotOffset(ptr32, 4+responseSlots+requestSlots+1) = MailboxTagLast //end
 	return ptr32
-}
+}*/
 
 // this returns the ARM clock rate, which can vary based on the underlying
 // system clock speed
 func GetClockRate() (uint32, bool) {
-	buffer := message(0, MailboxTagGetClockRate, 2)
-	*slotOffset(buffer, 5) = 0x4
-	*slotOffset(buffer, 6) = 0x0
-	dumpMessage(buffer, 8)
-	ok := Call(MailboxChannelProperties, buffer)
-	dumpMessage(buffer, 8)
-	if !ok {
-		return 79083, false //strange constant so it is easy to find
+	buffer := message(2, MailboxTagGetClockRate, 2)
+
+	buffer.s[5].Set(0x4)
+	buffer.s[6].Set(0)
+	if !Call(MailboxChannelProperties, buffer) {
+		return 7903, false
 	}
-	if *slotOffset(buffer, 5) != 4 {
-		return 79084, false
+	if buffer.s[5].Get() != 4 {
+		return 7904, false
 	}
-	return *slotOffset(buffer, 6), true
+	return buffer.s[6].Get(), true
 }
 
 func slotOffset(ptr32 *uint32, slot int) *uint32 {

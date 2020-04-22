@@ -23,7 +23,7 @@ type GPIORegisterMap struct {
 	FallingEdgeDetectEnable0 volatile.Register32    //0x58
 	FallingEdgeDetectEnable1 volatile.Register32    //0x5C
 	reserved07               volatile.Register32    //0x60
-	HighDetectEnable9        volatile.Register32    //0x64
+	HighDetectEnable0        volatile.Register32    //0x64
 	HighDetectEnable1        volatile.Register32    //0x68
 	reserved08               volatile.Register32    //0x6C
 	LowDetectEnable0         volatile.Register32    //0x70
@@ -59,9 +59,9 @@ func GPIOSetup(pinNumber uint8, mode GPIOMode) bool {
 	var shift uint8
 	shift = ((pinNumber % 10) * 3) // Create shift amount
 
-	value := uint32(mode)
+	value := uint32(7)
 	mask := uint32(7)
 
-	GPIO.FuncSelect[pinNumber%10].ReplaceBits(value, mask, shift)
+	GPIO.FuncSelect[int(mode)].ReplaceBits(value, mask, shift)
 	return true // Return true
 }
