@@ -12,7 +12,7 @@ kernel8.img: sdcard
 	llvm-objcopy -O binary sdcard kernel8.img
 
 run:
-	qemu-system-aarch64 -M raspi3 -kernel kernel8.img -serial null -serial mon:stdio \
+	qemu-system-aarch64 -M raspi3 -kernel kernel8.img -serial null -serial stdio \
 	-chardev pty,id=char1 \
 	-drive file=/Users/iansmith/outfile.bin,if=sd,format=raw
 
