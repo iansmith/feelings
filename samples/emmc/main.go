@@ -3,6 +3,7 @@ package main
 import (
 	"feelings/src/hardware/bcm2835"
 	rt "feelings/src/tinygo_runtime"
+	"unsafe"
 
 	"github.com/tinygo-org/tinygo/src/device/arm"
 )
@@ -22,8 +23,13 @@ func main() {
 	//u := unsafe.Offsetof(bcm2835.GPIO.PullUpDownEnableClock1)
 	//rt.MiniUART.Hex64string(uint64(u))
 
+	buffer := make([]byte, 512)
 	if err := sdInit(); err == nil {
 		_ = rt.MiniUART.WriteString("initialized the card ok\n")
+		// read the master boot record after our bss segment
+		if sdReadblock(0, buffer, 1) != 0 {
+			rt.MiniUART.Dump(unsafe.Pointer(&buffer[0]))
+		}
 	} else {
 		_ = rt.MiniUART.WriteString("unable to init card: ")
 		rt.MiniUART.WriteString(err.Error())
@@ -698,3 +704,92 @@ func waitCycles(n int) {
 		n--
 	}
 }
+
+func sdReadblock(lba uint32, buffer []byte, num uint32) int {
+	var r, c, d int
+	c = 0
+	if num < 1 {
+		num = 1
+	}
+	rt.MiniUART.WriteString("sd_readblock lba ")
+	rt.MiniUART.Hex32string(lba)
+	rt.MiniUART.WriteString(" num ")
+	rt.MiniUART.Hex32string(num)
+	rt.MiniUART.WriteCR()
+	if sdStatus(bcm2835.SRDataInhibit) != 0 {
+		sd_err = bcm2835.SDTimeoutUnsigned
+		return 0
+	}
+	buf := (*uint32)(unsafe.Pointer(&buffer[0]))
+	if sd_scr[0]&bcm2835.SCR_SUPP_CCS != 0 {
+		if num > 1 && (sd_scr[0]&bcm2835.SCR_SUPP_SET_BLKCNT != 0) {
+			sdSendCommand(bcm2835.CommandSetBlockcount, num)
+			if sd_err != 0 {
+				return 0
+			}
+		}
+		bcm2835.EMCC.BlockSizAndCount.Set(uint32((num << 16) | 512))
+		if num == 1 {
+			sdSendCommand(bcm2835.CommandReadSingle, lba)
+		} else {
+			sdSendCommand(bcm2835.CommandReadMulti, lba)
+		}
+		if sd_err != 0 {
+			return 0
+		}
+	} else {
+		bcm2835.EMCC.BlockSizAndCount.Set((1 << 16) | 512)
+	}
+
+	for c < int(num) {
+		if sd_scr[0]&bcm2835.SCR_SUPP_CCS == 0 {
+			sdSendCommand(bcm2835.CommandReadSingle, (lba+uint32(c))*512)
+			if sd_err != 0 {
+				return 0
+			}
+		}
+		r = sdWaitForInterrupt(bcm2835.InterruptReadReady)
+		if r != 0 {
+			rt.MiniUART.WriteString("ERROR: Timeout waiting for ready to read\n")
+			sd_err = uint64(r)
+			return 0
+		}
+		for d = 0; d < 128; d++ {
+			*buf = bcm2835.EMCC.Data.Get()
+			buf = (*uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(buf)) + 4))
+		}
+		c++
+		buf = (*uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(buf)) + 512))
+	}
+	if num > 1 && sd_scr[0]&bcm2835.SCR_SUPP_SET_BLKCNT == 0 && sd_scr[0]&bcm2835.SCR_SUPP_CCS != 0 {
+		sdSendCommand(bcm2835.CommandStopTrans, 0)
+	}
+	//did it blow up?
+	if sd_err != bcm2835.SDOk {
+		return int(sd_err)
+	}
+	//did we read the right amt?
+	if c != int(num) {
+		return 0
+	}
+	return int(num) * 512
+}
+
+//*EMMC_BLKSIZECNT = (num << 16) | 512;
+//sd_cmd(num == 1 ? CMD_READ_SINGLE : CMD_READ_MULTI,lba);
+//if(sd_err) return 0;
+//} else {
+//*EMMC_BLKSIZECNT = (1 << 16) | 512;
+//}
+//while( c < num ) {
+//if(!(sd_scr[0] & SCR_SUPP_CCS)) {
+//sd_cmd(CMD_READ_SINGLE,(lba+c)*512);
+//if(sd_err) return 0;
+//}
+//if((r=sd_int(INT_READ_RDY))){uart_puts("\rERROR: Timeout waiting for ready to read\n");sd_err=r;return 0;}
+//for(d=0;d<128;d++) buf[d] = *EMMC_DATA;
+//c++; buf+=128;
+//}
+//if( num > 1 && !(sd_scr[0] & SCR_SUPP_SET_BLKCNT) && (sd_scr[0] & SCR_SUPP_CCS)) sd_cmd(CMD_STOP_TRANS,0);
+//return sd_err!=SD_OK || c!=num? 0 : num*512;
+//}

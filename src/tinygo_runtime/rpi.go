@@ -2,6 +2,7 @@ package tinygo_runtime
 
 import (
 	p "feelings/src/hardware/bcm2835"
+	"unsafe"
 
 	"github.com/tinygo-org/tinygo/src/device/arm"
 )
@@ -302,4 +303,51 @@ func (uart *UART) NextRx() uint8 {
 	tail &= RxBufMax
 	uart.rxtail = tail
 	return result
+}
+
+/**
+ * Dump memory
+ */
+func (u *UART) Dump(ptr unsafe.Pointer) {
+	var a, b uint64
+	var d byte
+	var c byte
+
+	for a = uint64(uintptr(ptr)); a < uint64(uintptr(ptr))+512; a += 16 {
+		u.Hex32string(uint32(a))
+		u.WriteString(": ")
+		for b = 0; b < 16; b++ {
+			c = *((*byte)(unsafe.Pointer(uintptr(a + b))))
+			d = c
+			d >>= 4
+			d &= 0xF
+			if d > 9 {
+				d += 0x37
+			} else {
+				d += 0x30
+			}
+			u.WriteByte(byte(d))
+			d = c
+			d &= 0xF
+			if d > 9 {
+				d += 0x37
+			} else {
+				d += 0x30
+			}
+			u.WriteByte(byte(d))
+			u.WriteByte(' ')
+			if b%4 == 3 {
+				u.WriteByte(' ')
+			}
+		}
+		for b = 0; b < 16; b++ {
+			c = *((*byte)(unsafe.Pointer(uintptr(a + b))))
+			if c < 32 || c > 127 {
+				u.WriteByte('.')
+			} else {
+				u.WriteByte(c)
+			}
+		}
+		u.WriteCR()
+	}
 }
