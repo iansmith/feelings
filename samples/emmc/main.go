@@ -22,8 +22,7 @@ func main() {
 
 	buffer := make([]byte, 512)
 	if err := sdInit(); err == nil {
-		_ = rt.MiniUART.WriteString("initialized the card ok\n")
-		// read the master boot record after our bss segment
+		// read the master boot record
 		if sdReadblock(0, buffer, 1) != 0 {
 			rt.MiniUART.Dump(unsafe.Pointer(&buffer[0]))
 		}
@@ -44,9 +43,6 @@ func sdWaitForInterrupt(mask uint32) int {
 	for (bcm2835.EMCC.Interrupt.Get()&m == 0) && cnt > 0 {
 		rt.WaitMuSec(1)
 		cnt--
-		if cnt%1000 == 0 {
-			rt.MiniUART.WriteByte('.')
-		}
 	}
 	r = int(bcm2835.EMCC.Interrupt.Get())
 	if cnt <= 0 || (r&bcm2835.InterruptCommandTimeout) > 0 || (r&bcm2835.InterruptDataTimeout) > 0 {
@@ -157,50 +153,35 @@ func sdInit() error {
 	var r, ccs, cnt int
 	r = int(bcm2835.GPIO.FuncSelect[4].Get())
 
-	rt.MiniUART.WriteString("sdinit, func select 4, pin 7 ")
-	rt.MiniUART.Hex64string(uint64(r))
 	comp := ^(int(7) << int((7 * 3)))
 	r = r & comp //clearing the pin seven entries?
-	rt.MiniUART.Hex64string(uint64(r))
-	rt.MiniUART.WriteCR()
 	bcm2835.GPIO.FuncSelect[4].Set(uint32(r))
 	waitOnPullUps(1 << 15)
 
 	// GPIO_CLK
 	r = int(bcm2835.GPIO.FuncSelect[4].Get())
-	rt.MiniUART.WriteString("sdinit, func select 4, pins 8 and 9 ")
-	rt.MiniUART.Hex64string(uint64(r))
 	r = r | ((int(7) << (8 * 3)) | (int(7 << (9 * 3))))
-	rt.MiniUART.Hex64string(uint64(r))
-	rt.MiniUART.WriteCR()
 	bcm2835.GPIO.FuncSelect[4].Set(uint32(r))
-
 	waitOnPullUps((1 << 16) | (1 << 17))
-	rt.MiniUART.Hex32string(0x00)
 
 	r = int(bcm2835.GPIO.FuncSelect[5].Get())
-	rt.MiniUART.WriteString("sdinit, func select 5, pin 0-3 ")
-	rt.MiniUART.Hex64string(uint64(r))
 	r = r | ((int(7 << (0 * 3))) | (int(7 << (1 * 3))) | (int(7 << (2 * 3))) | (int(7 << (3 * 3))))
-	rt.MiniUART.Hex64string(uint64(r))
 	bcm2835.GPIO.FuncSelect[5].Set(uint32(r))
-	rt.MiniUART.WriteCR()
 	waitOnPullUps((1 << 18) | (1 << 19) | (1 << 20) | (1 << 21))
 
 	sdHardwareVersion := (bcm2835.EMCC.SlotInterruptStatus.Get() & bcm2835.HostSpecNum) >> bcm2835.HostSpecNumShift
+
 	rt.MiniUART.WriteString("EMMC: GPIO set up\n")
-	rt.MiniUART.Hex32string(sdHardwareVersion)
+
 	// Reset the card.
 	bcm2835.EMCC.Control0.Set(0)
+
 	bcm2835.EMCC.Control1.SetBits(bcm2835.C1ResetHost)
 	cnt = 10000
 	for (bcm2835.EMCC.Control1.Get()&uint32(bcm2835.C1ResetHost) != 0) && cnt > 0 {
 		rt.WaitMuSec(10)
 		cnt--
 	}
-	rt.MiniUART.WriteString("control1 and reset host\n")
-	rt.MiniUART.Hex32string(bcm2835.EMCC.Control1.Get() & uint32(bcm2835.C1ResetHost))
-	rt.MiniUART.WriteCR()
 
 	if cnt <= 0 {
 		rt.MiniUART.WriteString("Failed to reset EMCC\n")
@@ -209,20 +190,15 @@ func sdInit() error {
 
 	//setup clocks
 	bcm2835.EMCC.Control1.SetBits(bcm2835.C1ClockEnableInternal | bcm2835.C1_TOUNIT_MAX)
-	rt.MiniUART.WriteString("fleazil ")
 	rt.WaitMuSec(10)
-	rt.MiniUART.WriteByte('?')
 	rt.MiniUART.Hex32string(bcm2835.EMCC.Control1.Get())
 
-	//*EMMC_CONTROL1 |= C1_CLK_INTLEN | C1_TOUNIT_MAX;
 	rt.WaitMuSec(10)
-	rt.MiniUART.WriteString("blargh ")
 	// Set clock to setup frequency.
 	err := sdSetClockToFreq(400000, sdHardwareVersion)
 	if err != nil {
 		return err
 	}
-	//if((r=)) return r;
 	bcm2835.EMCC.InterruptEnable.Set(0xffffffff)
 	bcm2835.EMCC.InterruptMask.Set(0xffffffff)
 	sd_scr[0] = 0
@@ -240,14 +216,9 @@ func sdInit() error {
 		return bcm2835.NewSDInitFailure("unable to send command if cond")
 	}
 
-	rt.MiniUART.WriteString("6 tries at cmd complete\n ")
 	cnt = 6
 	r = 0
 	for (r&bcm2835.ACMD41_CMD_COMPLETE) == 0 && cnt > 0 {
-		rt.MiniUART.WriteString("r for mask test ")
-		rt.MiniUART.Hex64string(uint64(r))
-		rt.MiniUART.Hex64string(bcm2835.ACMD41_CMD_COMPLETE)
-		rt.MiniUART.WriteCR()
 		cnt--
 		waitCycles(400)
 		r = sdSendCommand(bcm2835.CommandSendOpCond, bcm2835.ACMD41_ARG_HC)
@@ -262,13 +233,7 @@ func sdInit() error {
 			rt.MiniUART.WriteString("CSS ")
 
 		}
-		rt.MiniUART.WriteString("r is 64bit ")
-		rt.MiniUART.Hex64string(uint64(r))
-		rt.MiniUART.WriteCR()
 		if sd_err != bcm2835.SDTimeoutUnsigned && sd_err != bcm2835.SDOk {
-			rt.MiniUART.WriteString("ERROR: EMMC ACMD41 returned error")
-			rt.MiniUART.Hex64string(sd_err)
-			rt.MiniUART.WriteCR()
 			return bcm2835.NewSDInitFailure("EMMC ACMD41 returned error ")
 		}
 	}
@@ -282,18 +247,10 @@ func sdInit() error {
 		ccs = bcm2835.SCR_SUPP_CCS
 	}
 
-	rt.MiniUART.WriteString("ccs is ")
-	rt.MiniUART.Hex64string(uint64(ccs))
-	rt.MiniUART.WriteCR()
-
 	sdSendCommand(bcm2835.CommandAllSendCID, 0)
 	sd_rca = uint64(sdSendCommand(bcm2835.CommandSendRelAddr, 0))
-	rt.MiniUART.WriteString("EMMC: CMD_SEND_REL_ADDR returned ")
-	rt.MiniUART.Hex64string(sd_rca)
-	rt.MiniUART.WriteCR()
 	if sd_err != 0 {
 		return bcm2835.NewSDInitFailure("Command Send Relative Addr Failed")
-		//return sd_err;
 	}
 
 	if sdSetClockToFreq(25000000, sdHardwareVersion) != nil {
@@ -444,10 +401,6 @@ func sdSetClockToFreq(f uint32, hwVersion uint32) error {
 	r = r | bcm2835.C1ClockEnable
 	bcm2835.EMCC.Control1.Set(r)
 	rt.WaitMuSec(10)
-
-	rt.MiniUART.WriteString("control 1 after clock")
-	rt.MiniUART.Hex32string(bcm2835.EMCC.Control1.Get())
-	rt.MiniUART.WriteCR()
 
 	cnt = 10000
 	for bcm2835.EMCC.Control1.Get()&bcm2835.C1ClockStable == 0 && cnt > 0 {
