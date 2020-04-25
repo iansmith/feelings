@@ -16,18 +16,33 @@ func raw_exception_handler() {
 var sd_ocr, sd_rca, sd_err, sd_hv uint64
 var sd_scr [2]uint64
 
+const sectorSize = 0x200
+
 func main() {
 	rt.MiniUART = rt.NewUART()
 	_ = rt.MiniUART.Configure(rt.UARTConfig{ /*no interrupt*/ })
 
 	buffer := make([]byte, 512)
 	if err := sdInit(); err == nil {
-		// read the master boot record
-		if sdReadblock(0, buffer, 1) != 0 {
-			rt.MiniUART.Dump(unsafe.Pointer(&buffer[0]))
+		bpb := fatGetPartition(buffer) //data read into this buffer
+		if bpb == nil {
+			errorMessage("Unable to read MBR or unable to parse BIOS parameter block")
+		} else {
+			fn := "DPKG.CFG"
+			cluster := fatGetCluster(fn, bpb)
+			if cluster == 0 {
+				errorMessage("file not found")
+			} else {
+				data := fatReadfile(cluster, bpb, partitionlba)
+				if data == nil {
+					errorMessage("unable to read cluster data for" + fn)
+				}
+				infoMessage("file raw size is:", uint32(len(data)))
+				rt.MiniUART.Dump(unsafe.Pointer(&data[0]))
+			}
 		}
 	} else {
-		_ = rt.MiniUART.WriteString("unable to init card: ")
+		_ = rt.MiniUART.WriteString("ERROR unable to init card: ")
 		rt.MiniUART.WriteString(err.Error())
 	}
 	rt.MiniUART.WriteCR()
@@ -97,11 +112,13 @@ func sdSendCommand(code uint32, arg uint32) int {
 		sd_err = bcm2835.SDTimeoutUnsigned //uint64(int64(bcm2835.SDTimeout))
 		return 0
 	}
-	rt.MiniUART.WriteString("sending command ")
-	rt.MiniUART.Hex32string(code)
-	rt.MiniUART.WriteString(" arg ")
-	rt.MiniUART.Hex32string(arg)
-	rt.MiniUART.WriteString("\n")
+	if showCommands {
+		rt.MiniUART.WriteString("sending command ")
+		rt.MiniUART.Hex32string(code)
+		rt.MiniUART.WriteString(" arg ")
+		rt.MiniUART.Hex32string(arg)
+		rt.MiniUART.WriteString("\n")
+	}
 
 	//if(sd_status(SR_CMD_INHIBIT)) { uart_puts("ERROR: EMMC busy\n"); sd_err= SD_TIMEOUT;return 0;}
 	//uart_puts("EMMC: Sending command ");uart_hex(code);uart_puts(" arg ");uart_hex(arg);uart_puts("\n");
@@ -191,9 +208,6 @@ func sdInit() error {
 	//setup clocks
 	bcm2835.EMCC.Control1.SetBits(bcm2835.C1ClockEnableInternal | bcm2835.C1_TOUNIT_MAX)
 	rt.WaitMuSec(10)
-	rt.MiniUART.Hex32string(bcm2835.EMCC.Control1.Get())
-
-	rt.WaitMuSec(10)
 	// Set clock to setup frequency.
 	err := sdSetClockToFreq(400000, sdHardwareVersion)
 	if err != nil {
@@ -231,8 +245,8 @@ func sdInit() error {
 		}
 		if r&bcm2835.ACMD41_CMD_CCS > 0 {
 			rt.MiniUART.WriteString("CSS ")
-
 		}
+		rt.MiniUART.WriteCR()
 		if sd_err != bcm2835.SDTimeoutUnsigned && sd_err != bcm2835.SDOk {
 			return bcm2835.NewSDInitFailure("EMMC ACMD41 returned error ")
 		}
@@ -430,27 +444,24 @@ func waitCycles(n int) {
 	}
 }
 
-func sdReadblock(lba uint32, buffer []byte, num uint32) int {
+func sdReadblock(lba uint32, num uint32) (int, []byte) {
 	var r, c, d int
 	c = 0
 	if num < 1 {
 		num = 1
 	}
-	rt.MiniUART.WriteString("sd_readblock lba ")
-	rt.MiniUART.Hex32string(lba)
-	rt.MiniUART.WriteString(" num ")
-	rt.MiniUART.Hex32string(num)
-	rt.MiniUART.WriteCR()
+	buffer := make([]byte, sectorSize*num)
+	infoMessage("--------> start reading n blocks, first block @: ", num, lba)
 	if sdStatus(bcm2835.SRDataInhibit) != 0 {
 		sd_err = bcm2835.SDTimeoutUnsigned
-		return 0
+		return 0, nil
 	}
 	buf := (*uint32)(unsafe.Pointer(&buffer[0]))
 	if sd_scr[0]&bcm2835.SCR_SUPP_CCS != 0 {
 		if num > 1 && (sd_scr[0]&bcm2835.SCR_SUPP_SET_BLKCNT != 0) {
 			sdSendCommand(bcm2835.CommandSetBlockcount, num)
 			if sd_err != 0 {
-				return 0
+				return 0, nil
 			}
 		}
 		bcm2835.EMCC.BlockSizAndCount.Set(uint32((num << 16) | 512))
@@ -460,7 +471,7 @@ func sdReadblock(lba uint32, buffer []byte, num uint32) int {
 			sdSendCommand(bcm2835.CommandReadMulti, lba)
 		}
 		if sd_err != 0 {
-			return 0
+			return 0, nil
 		}
 	} else {
 		bcm2835.EMCC.BlockSizAndCount.Set((1 << 16) | 512)
@@ -470,20 +481,20 @@ func sdReadblock(lba uint32, buffer []byte, num uint32) int {
 		if sd_scr[0]&bcm2835.SCR_SUPP_CCS == 0 {
 			sdSendCommand(bcm2835.CommandReadSingle, (lba+uint32(c))*512)
 			if sd_err != 0 {
-				return 0
+				return 0, nil
 			}
 		}
 		r = sdWaitForInterrupt(bcm2835.InterruptReadReady)
 		if r != 0 {
 			rt.MiniUART.WriteString("ERROR: Timeout waiting for ready to read\n")
 			sd_err = uint64(r)
-			return 0
+			return 0, nil
 		}
 		for d = 0; d < 128; d++ {
 			*buf = bcm2835.EMCC.Data.Get()
 			buf = (*uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(buf)) + 4))
 		}
-		c++
+		c++ //yuck!
 		buf = (*uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(buf)) + 512))
 	}
 	if num > 1 && sd_scr[0]&bcm2835.SCR_SUPP_SET_BLKCNT == 0 && sd_scr[0]&bcm2835.SCR_SUPP_CCS != 0 {
@@ -491,11 +502,30 @@ func sdReadblock(lba uint32, buffer []byte, num uint32) int {
 	}
 	//did it blow up?
 	if sd_err != bcm2835.SDOk {
-		return int(sd_err)
+		return int(sd_err), nil
 	}
 	//did we read the right amt?
 	if c != int(num) {
-		return 0
+		return 0, nil
 	}
-	return int(num) * 512
+	infoMessage("--------> done reading n bytes: ", uint32(len(buffer)))
+	return int(num) * sectorSize, buffer
+}
+
+func mainBug() {
+	buffer := make([]byte, 512)
+	for i := 0; i < 512; i++ {
+		buffer[i] = byte(i) //0->255 then 0->255, corresponding to the index number as byte
+	}
+	base := uintptr(unsafe.Pointer(&buffer[0]))
+	for dptr := uintptr(0); dptr < 512; dptr += 0x20 {
+		dirEntry := buffer[int(dptr) : int(dptr)+0x20] //32 byte slice
+		for i := 0; i < 20; i++ {
+			d := int(dptr)
+			bptr := (*byte)(unsafe.Pointer(base + dptr + uintptr(i)))
+			if buffer[d+i] != byte(d+i) || dirEntry[i] != byte(d+i) || *bptr != byte(d+i) {
+				print("bogus\n")
+			}
+		}
+	}
 }

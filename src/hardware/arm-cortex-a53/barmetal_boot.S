@@ -231,6 +231,11 @@ master:
 	eret
 
 el2_drop_to_el1:
+    //avoid trap of simd instructions (used by clang)
+    mrs x0,CPACR_EL1
+    orr x0,x0,#(3 << 20)
+    msr CPACR_EL1,x0
+
 	mrs x0, spsr_el2 // SavedProgramStatusRegisterValue but for EL2
 	orr x0,x0,#0x4 //bit 2, bit 0  (bit 2 => level 1 is desired EL, bit0 means use own stack for EL1), so EL1h
 	orr x0,x0,#0x1 //second step because #0x5 isn't a legal const
