@@ -533,7 +533,7 @@ func iterate(buffer []byte, fn string, temp uint32) uint32 {
 
 		if compareBytewise(append(dir.name[:nameLen], dir.ext[:extLen]...), fn, nameLen+extLen) {
 			start := uint32(dir.FirstClusterHi)<<16 | uint32(dir.FirstClusterLo)
-			infoMessage("FAT File "+fn+" starts at cluster ", (uint32(dir.FirstClusterLo)<<16)|uint32(dir.FirstClusterLo)
+			infoMessage("FAT File "+fn+" starts at cluster ", (uint32(dir.FirstClusterLo)<<16)|uint32(dir.FirstClusterLo))
 			// if so, return starting cluster
 			return start
 		}
