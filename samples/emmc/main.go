@@ -511,21 +511,3 @@ func sdReadblock(lba uint32, num uint32) (int, []byte) {
 	infoMessage("--------> done reading n bytes: ", uint32(len(buffer)))
 	return int(num) * sectorSize, buffer
 }
-
-func mainBug() {
-	buffer := make([]byte, 512)
-	for i := 0; i < 512; i++ {
-		buffer[i] = byte(i) //0->255 then 0->255, corresponding to the index number as byte
-	}
-	base := uintptr(unsafe.Pointer(&buffer[0]))
-	for dptr := uintptr(0); dptr < 512; dptr += 0x20 {
-		dirEntry := buffer[int(dptr) : int(dptr)+0x20] //32 byte slice
-		for i := 0; i < 20; i++ {
-			d := int(dptr)
-			bptr := (*byte)(unsafe.Pointer(base + dptr + uintptr(i)))
-			if buffer[d+i] != byte(d+i) || dirEntry[i] != byte(d+i) || *bptr != byte(d+i) {
-				print("bogus\n")
-			}
-		}
-	}
-}

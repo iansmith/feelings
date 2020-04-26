@@ -3,6 +3,8 @@ package tinygo_runtime
 import (
 	"unsafe"
 
+	"github.com/tinygo-org/tinygo/src/runtime"
+
 	"github.com/tinygo-org/tinygo/src/device/arm"
 )
 
@@ -30,19 +32,20 @@ func preinit() {
 	}
 }
 
-//var BootArg0, BootArg1, BootArg2, BootArg3, BootArg4 uint64
+var BootArg0, BootArg1, BootArg2, BootArg3, BootArg4 uint64
 
-//     was export main
-//func main(a0 uint64, a1 uint64, a2 uint64, a3 uint64, a4 uint64) {
-//BootArg0 = a0
-//BootArg1 = a1
-//BootArg2 = a2
-//BootArg3 = a3
-//BootArg4 = a4
-//
-//arm.Asm("hlt 0xffff")
-//runtime.Run()
-//}
+//go:export main
+func main(a0 uint64, a1 uint64, a2 uint64, a3 uint64, a4 uint64) {
+	//the args are only usable if you get called from the bootloader
+	//for a bare metal program, they are garbage
+	BootArg0 = a0
+	BootArg1 = a1
+	BootArg2 = a2
+	BootArg3 = a3
+	BootArg4 = a4
+
+	runtime.Run()
+}
 
 //export runtime.external_postinit
 func postinit() {
@@ -50,7 +53,7 @@ func postinit() {
 
 //export runtime.external_abort
 func abort() {
-	MiniUART.WriteString("# anticipation aborting...\n")
+	MiniUART.WriteString("# executable aborting...\n")
 	for {
 		arm.Asm("nop")
 	}

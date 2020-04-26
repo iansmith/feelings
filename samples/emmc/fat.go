@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"feelings/src/golang/encoding/binary"
+	"feelings/src/golang/fmt"
 	rt "feelings/src/tinygo_runtime"
 	"unsafe"
 )
@@ -311,15 +312,15 @@ func fatReadfile(cluster uint32, bpb *BIOSParamBlock, partitionlba uint32) []byt
 
 func errorMessage(s string) {
 	if showErrors {
-		rt.MiniUART.WriteString("ERROR:" + s + "\n")
+		fmt.Printf("ERROR:" + s + "\n")
 	}
 }
 func infoMessage(s string, values ...uint32) {
 	if showInfo {
-		rt.MiniUART.WriteString(s)
+		fmt.Printf("INFO " + s)
 		for _, v := range values {
-			rt.MiniUART.Hex32string(v)
+			fmt.Printf("%08x ", v)
 		}
-		rt.MiniUART.WriteString("\n")
+		fmt.Printf("\n")
 	}
 }
