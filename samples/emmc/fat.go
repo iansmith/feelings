@@ -5,6 +5,7 @@ import (
 	"feelings/src/golang/encoding/binary"
 	"feelings/src/golang/fmt"
 	rt "feelings/src/tinygo_runtime"
+	"unicode/utf16"
 	"unsafe"
 )
 
@@ -24,6 +25,71 @@ const directoryEntrySize = 0x20
 const showErrors = true
 const showInfo = true
 const showCommands = false
+const fat32EOCBoundary = 0xFFFFFF8 //anything at or above this is EOC
+const fat16EOCBoundary = 0xFFF8    //anything at or above this is EOC
+const showWarn = true
+
+var partitionlba = uint32(0)
+
+type rawFat32LFN struct {
+	SequenceNumber  byte
+	name0           [5]uint16
+	Attributes      byte
+	Type            byte
+	DOSNameChecksum byte
+	name1           [6]uint16
+	FirstCluster    uint16
+	name2           [2]uint16
+}
+
+type fat32LFN struct { //used after we confirmed the raw values are ok
+	sequenceNumber byte
+	isLast         bool
+	segment        string
+	firstClusterLo uint16
+}
+
+type BIOSParamBlock struct { //in the Volume Boot Record
+	jump  [3]uint8  //0x0
+	oem   [8]uint8  //0x3
+	Bps0  uint8     //0xB
+	Bps1  uint8     //0xC
+	Spc   uint8     //0xD sectors per clusters
+	Rsc   uint16    //0xE  reserved sector count
+	Nf    uint8     //0x10  number of fats
+	Nr0   uint8     //0x11  number root entries 0
+	Nr1   uint8     //0x12 number root entries 1
+	Ts16  uint16    //0x13 total sectors
+	Media uint8     //0x15  media descriptors
+	Spf16 uint16    //0x16 sectors per fat
+	Spt   uint16    //0x18  sectors per track
+	Nh    uint16    //0x1A  number of heads
+	Hs    uint32    //0x1C  hidden sectors
+	Ts32  uint32    //0x20
+	Spf32 uint32    //0x24  sectors per fat
+	Flg   uint32    //0x28 flags and version (last two)
+	Rc    uint32    //0x2C  root cluster
+	vol   [6]uint8  //0x30
+	fst   [8]uint8  //0x36  file system type
+	dmy   [20]uint8 //0x3E
+	fst2  [8]uint8  // 0x52 file system type
+}
+
+type fatDir struct {
+	name           [8]uint8
+	ext            [3]uint8
+	Attrib         byte
+	NTReserved     byte
+	TimeTenth      byte
+	WriteTime      uint16
+	WriteDate      uint16
+	LastAccessDate uint16
+	FirstClusterHi uint16
+	CreateTime     uint16
+	CreateDate     uint16
+	FirstClusterLo uint16
+	Size           uint32
+}
 
 // if n==0 returns false
 func compareBytewise(s1 []uint8, s2 string, n int) bool {
@@ -56,47 +122,6 @@ func strlenWithTerminator(p []uint8, terminator uint8) int {
 	//rt.MiniUART.WriteString("strlen " + string(p) + "\n")
 
 	return l
-}
-
-// get the end of bss segment from linker
-//extern unsigned char _end;
-
-var partitionlba = uint32(0)
-
-type BIOSParamBlock struct { //in the Volume Boot Record
-	jump  [3]uint8  //0x0
-	oem   [8]uint8  //0x3
-	Bps0  uint8     //0xB
-	Bps1  uint8     //0xC
-	Spc   uint8     //0xD sectors per clusters
-	Rsc   uint16    //0xE  reserved sector count
-	Nf    uint8     //0x10  number of fats
-	Nr0   uint8     //0x11  number root entries 0
-	Nr1   uint8     //0x12 number root entries 1
-	Ts16  uint16    //0x13 total sectors
-	Media uint8     //0x15  media descriptors
-	Spf16 uint16    //0x16 sectors per fat
-	Spt   uint16    //0x18  sectors per track
-	Nh    uint16    //0x1A  number of heads
-	Hs    uint32    //0x1C  hidden sectors
-	Ts32  uint32    //0x20
-	Spf32 uint32    //0x24  sectors per fat
-	Flg   uint32    //0x28 flags and version (last two)
-	Rc    uint32    //0x2C  root cluster
-	vol   [6]uint8  //0x30
-	fst   [8]uint8  //0x36  file system type
-	dmy   [20]uint8 //0x3E
-	fst2  [8]uint8  // 0x52 file system type
-}
-
-type fatDir struct {
-	name  [8]uint8
-	ext   [3]uint8
-	attr  [9]uint8
-	Ch    uint16
-	Attr2 uint32
-	Cl    uint16
-	Size  uint32
 }
 
 /**
@@ -159,29 +184,40 @@ func fatGetCluster(fn string, bpb *BIOSParamBlock) uint32 {
 	s = (uint32(bpb.Nr0) + (uint32(bpb.Nr1) << 8)) * /*uint32(unsafe.Sizeof(fatDir))*/ directoryEntrySize
 	if bpb.Spf16 == 0 { //adjust for fat32?
 		root_sec += (bpb.Rc - 2) * uint32(bpb.Spc)
+		infoMessage("root cluster:", bpb.Rc, uint32(bpb.Spc))
 	}
 	root_sec += partitionlba
+	infoMessage("root sector:", root_sec)
+	infoMessage("numerator:", s)
+
 	// load the root directory
 	read, rootDir := sdReadblock(root_sec, s/512+1)
+	infoMessage("read block:", s/512+1, uint32(read), (uint32(bpb.Nr0) + (uint32(bpb.Nr1) << 8)))
 	if read != 0 {
-		for dptr := uintptr(0); dptr < uintptr(512); dptr = dptr + directoryEntrySize {
+		for dptr := uintptr(0); dptr < uintptr(512+512); dptr = dptr + directoryEntrySize {
 			dirEntryBuffer := rootDir[dptr : dptr+directoryEntrySize]
 			dir := newFATDir()
 			if !dir.unpack(dirEntryBuffer) {
 				return 0
 			}
 			if dir.name[0] == 0 {
+				infoMessage("bailing out because found end of list entry @ position: ", uint32(dptr/directoryEntrySize))
 				break
 			}
-			if dir.name[0] == 0xE5 || dir.attr[0] == 0xF {
+			if dir.name[0] == 0xE5 {
+				continue
+			}
+			if dir.Attrib == 0xF {
+				lfn := longFilename(dirEntryBuffer)
+				infoMessage("long filename segment found: " + lfn.segment)
 				continue
 			}
 			nameLen := strlenWithTerminator(dir.name[:], ' ')
 			extLen := strlenWithTerminator(dir.ext[:], ' ')
 
 			if compareBytewise(append(dir.name[:nameLen], dir.ext[:extLen]...), fn, nameLen+extLen) {
-				start := uint32(dir.Ch)<<16 | uint32(dir.Cl)
-				infoMessage("FAT File "+fn+" starts at cluster ", (uint32(dir.Ch)<<16)|uint32(dir.Cl))
+				start := uint32(dir.FirstClusterHi)<<16 | uint32(dir.FirstClusterLo)
+				infoMessage("FAT File "+fn+" starts at cluster ", (uint32(dir.FirstClusterHi)<<16)|uint32(dir.FirstClusterLo))
 				// if so, return starting cluster
 				return start
 			}
@@ -209,6 +245,7 @@ func (b *BIOSParamBlock) unpack(buffer []uint8) bool {
 	copy(b.vol[0:6], buffer[0x30:0x30+6])
 	copy(b.fst[0:8], buffer[0x36:0x36+8])
 	copy(b.fst2[0:8], buffer[0x52:0x52+8])
+	infoMessage("unpacking bpb:", uint32(b.Nr0), uint32(b.Nr1))
 	return true
 }
 
@@ -232,8 +269,7 @@ func (f *fatDir) unpack(buffer []uint8) bool {
 		return false
 	}
 	copy(f.name[:], buffer[0:8])
-	copy(f.ext[:], buffer[9:12])
-	copy(f.attr[:], buffer[12:21])
+	copy(f.ext[:], buffer[8:11])
 	return true
 }
 
@@ -282,9 +318,36 @@ func fatReadfile(cluster uint32, bpb *BIOSParamBlock, partitionlba uint32) []byt
 		errorMessage("failed to read FAT")
 		return nil
 	}
-	rt.MiniUART.Dump(unsafe.Pointer(&fatTable[0]))
-	rt.MiniUART.WriteString("end of first block of fat table\n")
-	for cluster > 1 && cluster < 0xFFF8 {
+	eoc := uint32(fat32EOCBoundary)
+	unusual0 := uint32(0xFFFFFFF0)
+	unusual1 := uint32(0xFFFFFFF1)
+	unusual2 := uint32(0xFFFFFFF2)
+	unusual3 := uint32(0xFFFFFFF3)
+	unusual4 := uint32(0xFFFFFFF4)
+	unusual5 := uint32(0xFFFFFFF5)
+	formatFiller := uint32(0xFFFFFFF6)
+	badSector := uint32(0xFFFFFFF7)
+
+	if bpb.Spf16 > 0 {
+		eoc = uint32(fat16EOCBoundary)
+		unusual0 = uint32(0xFFF0)
+		unusual1 = uint32(0xFFF1)
+		unusual2 = uint32(0xFFF2)
+		unusual3 = uint32(0xFFF3)
+		unusual4 = uint32(0xFFF4)
+		unusual5 = uint32(0xFFF5)
+		formatFiller = uint32(0xFFF6)
+		badSector = uint32(0xFFF7)
+	}
+	for cluster > 1 && cluster < eoc {
+		switch cluster {
+		case unusual0, unusual1, unusual2, unusual3, unusual4, unusual5:
+			warnMessage("unusual byte value found in cluster chain:", cluster)
+		case formatFiller:
+			warnMessage("unexpected use of reserved value in cluster chain:", cluster)
+		case badSector:
+			warnMessage("ignoring bad sector value cluster chain:", cluster)
+		}
 		read, buffer := sdReadblock((cluster-2)*uint32(bpb.Spc)+data_sec, uint32(bpb.Spc))
 		if read == 0 {
 			errorMessage("unable to read cluster for file")
@@ -301,7 +364,7 @@ func fatReadfile(cluster uint32, bpb *BIOSParamBlock, partitionlba uint32) []byt
 		} else {
 			//consider this fat an array of uint32
 			base := (*uint32)(unsafe.Pointer(&fatTable[0]))
-			base = (*uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(base)) + uintptr((cluster << 2)) - 512)) // <<2 is because 4 bytes per
+			base = (*uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(base)) + uintptr((cluster << 2)) - /*512*/ 0)) // <<2 is because 4 bytes per
 			next = *base
 		}
 		cluster = next
@@ -323,4 +386,157 @@ func infoMessage(s string, values ...uint32) {
 		}
 		fmt.Printf("\n")
 	}
+}
+func warnMessage(s string, values ...uint32) {
+	if showWarn {
+		rt.MiniUART.WriteString("WARN " + s)
+		for _, v := range values {
+			rt.MiniUART.Hex32string(v)
+		}
+		rt.MiniUART.WriteString("\n")
+	}
+}
+
+func longFilename(in []byte) *fat32LFN {
+	buffer := bytes.NewBuffer(in)
+	raw := &rawFat32LFN{}
+	if err := binary.Read(buffer, binary.LittleEndian, raw); err != nil {
+		errorMessage("Unable to decode binary format for long filename" + err.Error())
+		return nil
+	}
+	offset := 1
+	for i := 0; i < 4; i++ {
+		raw.name0[i] = uint16(in[(i*2)+1+offset])<<8 + uint16(in[i*2+offset])
+	}
+	offset = 0xE
+	for i := 0; i < 6; i++ {
+		raw.name1[i] = uint16(in[(i*2)+1+offset])<<8 + uint16(in[i*2+offset])
+	}
+	offset = 0x1C
+	for i := 0; i < 2; i++ {
+		raw.name1[i] = uint16(in[(i*2)+1+offset])<<8 + uint16(in[i*2+offset])
+	}
+	if raw.Attributes != 0xF || raw.FirstCluster != 0 || raw.Type != 0 {
+		warnMessage("badly formed fat32 long filename record: ",
+			uint32(raw.Attributes), uint32(raw.FirstCluster), uint32(raw.Type))
+		return nil
+	}
+	output := &fat32LFN{}
+	output.isLast = false
+	if raw.SequenceNumber&0x40 > 0 {
+		output.isLast = true
+	}
+	sn := raw.SequenceNumber & 0x1F
+	output.sequenceNumber = sn
+	output.firstClusterLo = raw.FirstCluster
+	if output.sequenceNumber < 1 || output.sequenceNumber > 0x14 {
+		warnMessage("badly formed fat32 long filename record, sequence number: ",
+			uint32(output.sequenceNumber))
+	}
+	count := uint32(0)
+	done := false
+	var holdChars [14]uint16
+outer0:
+	for i := 0; i < 4; i++ {
+		switch raw.name0[i] {
+		case 0x0, 0xffff:
+			done = true
+			break outer0
+		default:
+			holdChars[count] = raw.name0[i]
+			count++
+		}
+	}
+	if !done {
+	outer1:
+		for i := 0; i < 6; i++ {
+			switch raw.name1[i] {
+			case 0x0, 0xffff:
+				done = true
+				break outer1
+			default:
+				holdChars[count] = raw.name1[i]
+				count++
+			}
+		}
+	}
+	if !done {
+	outer2:
+		for i := 0; i < 2; i++ {
+			switch raw.name2[i] {
+			case 0x0, 0xffff:
+				done = true
+				break outer2
+			default:
+				holdChars[count] = raw.name2[i]
+				count++
+			}
+		}
+	}
+	runes := make([]rune, count)
+	ct := 0
+	for i := 0; i < int(count); i++ {
+		r, pair := ucs2ToRune(holdChars[i])
+		if !pair {
+			runes[ct] = r
+			ct++
+			continue
+		}
+		//nasty case
+		if len(holdChars)-1 == i {
+			warnMessage("bad utf-16 in surrogate pair encoding at end of name, ignored")
+			continue
+		}
+		r2, pair := ucs2ToRune(holdChars[i+1])
+		if !pair {
+			warnMessage("bad utf-16 in surrogate pair encoding in name at character, ignored ", uint32(i+1))
+			continue
+		}
+		runes[ct] = utf16.DecodeRune(r, r2)
+		ct++
+	}
+	output.segment = string(runes)
+	return output
+}
+func ucs2ToRune(u uint16) (rune, bool) {
+	if u >= 0xD800 && u <= 0xDFFF {
+		return 0, true
+	}
+	return rune(u), false
+}
+
+func iterate(buffer []byte, fn string, temp uint32) uint32 {
+	for dptr := uintptr(0); dptr < uintptr(len(buffer)); dptr = dptr + directoryEntrySize {
+		dirEntryBuffer := buffer[dptr : dptr+directoryEntrySize]
+		dir := newFATDir()
+		if !dir.unpack(dirEntryBuffer) {
+			return 0
+		}
+		if dir.name[0] == 0 {
+			//infoMessage("bailing out because found end of list entry @ position: ", uint32(dptr/directoryEntrySize))
+			break
+		}
+		if dir.name[0] == 0xE5 {
+			continue
+		}
+		if dir.Attrib == 0xF {
+			lfn := longFilename(dirEntryBuffer)
+			if lfn == nil {
+				continue
+			}
+			warnMessage("long filename segment found: "+lfn.segment+" => sequence, sector:",
+				uint32(lfn.sequenceNumber), temp)
+			continue
+		}
+		nameLen := strlenWithTerminator(dir.name[:], ' ')
+		extLen := strlenWithTerminator(dir.ext[:], ' ')
+
+		if compareBytewise(append(dir.name[:nameLen], dir.ext[:extLen]...), fn, nameLen+extLen) {
+			start := uint32(dir.FirstClusterHi)<<16 | uint32(dir.FirstClusterLo)
+			infoMessage("FAT File "+fn+" starts at cluster ", (uint32(dir.FirstClusterLo)<<16)|uint32(dir.FirstClusterLo)
+			// if so, return starting cluster
+			return start
+		}
+	}
+	return 0
 }

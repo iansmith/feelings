@@ -18,7 +18,7 @@ var sd_scr [2]uint64
 
 const sectorSize = 0x200
 
-func main() {
+func mainNormal() {
 	rt.MiniUART = rt.NewUART()
 	_ = rt.MiniUART.Configure(rt.UARTConfig{ /*no interrupt*/ })
 
@@ -28,11 +28,12 @@ func main() {
 		if bpb == nil {
 			errorMessage("Unable to read MBR or unable to parse BIOS parameter block")
 		} else {
-			fn := "DPKG.CFG"
+			fn := "FOO.CFG"
 			cluster := fatGetCluster(fn, bpb)
 			if cluster == 0 {
 				errorMessage("file not found")
 			} else {
+				infoMessage("cluster value sent to fatReadFile ", cluster)
 				data := fatReadfile(cluster, bpb, partitionlba)
 				if data == nil {
 					errorMessage("unable to read cluster data for" + fn)
@@ -510,4 +511,42 @@ func sdReadblock(lba uint32, num uint32) (int, []byte) {
 	}
 	infoMessage("--------> done reading n bytes: ", uint32(len(buffer)))
 	return int(num) * sectorSize, buffer
+}
+
+func mainBug() {
+	buffer := make([]byte, 512)
+	for i := 0; i < 512; i++ {
+		buffer[i] = byte(i) //0->255 then 0->255, corresponding to the index number as byte
+	}
+	base := uintptr(unsafe.Pointer(&buffer[0]))
+	for dptr := uintptr(0); dptr < 512; dptr += 0x20 {
+		dirEntry := buffer[int(dptr) : int(dptr)+0x20] //32 byte slice
+		for i := 0; i < 20; i++ {
+			d := int(dptr)
+			bptr := (*byte)(unsafe.Pointer(base + dptr + uintptr(i)))
+			if buffer[d+i] != byte(d+i) || dirEntry[i] != byte(d+i) || *bptr != byte(d+i) {
+				print("bogus\n")
+			}
+		}
+	}
+}
+
+func main() {
+	rt.MiniUART = rt.NewUART()
+	_ = rt.MiniUART.Configure(rt.UARTConfig{ /*no interrupt*/ })
+	buffer := make([]byte, 512)
+	if err := sdInit(); err == nil {
+		bpb := fatGetPartition(buffer) //data read into this buffer
+		infoMessage("here is bpb", bpb.Spf32)
+		if bpb == nil {
+			errorMessage("Unable to read MBR or unable to parse BIOS parameter block")
+		} else {
+			warnMessage("partition lba ", partitionlba)
+			buffer := fatReadfile(2, bpb, partitionlba)
+			warnMessage("read buffer from cluster 2:", uint32(len(buffer)))
+		}
+
+	} else {
+		errorMessage("failed to launch")
+	}
 }
