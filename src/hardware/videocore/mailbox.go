@@ -3,6 +3,7 @@ package videocore
 import (
 	"feelings/src/hardware/rpi"
 	"feelings/src/lib/semihosting"
+	"feelings/src/lib/trust"
 	"unsafe"
 
 	"github.com/tinygo-org/tinygo/src/device/arm"
@@ -37,6 +38,15 @@ const MailboxTagMACAddress = 0x00010003
 const MailboxTagGetClockRate = 0x00030002
 const MailboxTagLast = 0x0
 
+/* framebuffer related */
+const MailboxTagSetPhysicalWidthHeight = 0x00048003
+const MailboxTagSetVirtualWidthHeight = 0x48004
+const MailboxTagSetVirtualOffset = 0x48009
+const MailboxTagSetDepth = 0x48005
+const MailboxTagSetPixelOrder = 0x48006
+const MailboxTagGetFramebuffer = 0x40001
+const MailboxTagGetPitch = 0x40008
+
 type MailboxRegisterMap struct {
 	Read     volatile.Register32    //0x00
 	reserved [3]volatile.Register32 //0x04-0x10
@@ -47,6 +57,15 @@ type MailboxRegisterMap struct {
 	Write    volatile.Register32    //0x20
 }
 
+type FrameBufferInfo struct {
+	Buffer *byte
+	Width  uint32
+	Height uint32
+	Pitch  uint32
+}
+
+// Uses of this function are NOT multithread safe. This is uses a single, shared
+// mailbox data area.
 func Call(ch uint8, mboxBuffer *sequenceOfSlots) bool {
 	mask := uintptr(^uint64(0xf))
 	rawPtr := uintptr(unsafe.Pointer(mboxBuffer))
@@ -72,12 +91,7 @@ func Call(ch uint8, mboxBuffer *sequenceOfSlots) bool {
 		} else {
 			read := Mailbox.Read.Get()
 			if read == uint32(addrWithChannel) {
-				//happiness.Console.Logf("mailbox response\n")
-				//for i := 0; i < len(mboxBuffer); i++ {
-				//	happiness.Console.Logf("%d %04x\n", i, mboxBuffer[i].Get())
-				//}
-				//did we get a confirm? we have to use volatile here because we
-				//could not guarantee alignment if we used volatile.Register32()
+				//did we get a confirm?
 				return mboxBuffer.s[1].Get() == MailboxResponse
 			}
 		}
@@ -140,8 +154,13 @@ func MessageNoParams(tag uint32, reqRespSlots int) (uint64, bool) {
 	panic("too many response slots")
 }
 
+// this type is super hairy.  It must be 16 byte aligned to be sent to the mailbox
+// interface. Further, it has to be big enough to accomodate the largest message
+// we send to the mailbox interface.  To do alignment use hackFor16ByteAlignment.
+// This cannot be a slice because that introduces the slice structure above this
+// object, which we can't use.
 type sequenceOfSlots struct {
-	s [8]volatile.Register32
+	s [36]volatile.Register32
 }
 
 //var seq sequenceOfSlots
@@ -155,8 +174,7 @@ func message(requestSlots int, tag uint32, responseSlots int) *sequenceOfSlots {
 	}
 	ptr := sixteenByteAlignedPointer(uintptr(totalSlots << 2)) //32 bit slots
 	ptr32 := ((*uint32)(unsafe.Pointer(ptr)))
-	seq:=(*sequenceOfSlots)(unsafe.Pointer(ptr32))
-
+	seq := (*sequenceOfSlots)(unsafe.Pointer(ptr32))
 
 	seq.s[0].Set(4 * totalSlots) //bytes of total size
 	seq.s[1].Set(MailboxRequest)
@@ -184,7 +202,7 @@ func message(requestSlots int, tag uint32, responseSlots int) *uint32 {
 	for i := 3; i < 3+int(requestSlots); i++ {
 		*slotOffset(ptr32, i) = 0
 	}
-	*slotOffset(ptr32, 3+requestSlots) = uint32(responseSlots * 4) //buffer size
+	*slotOffset(ptr32, 3+requestSlots) = uint32(responseSlots * 4) //Buffer size
 	*slotOffset(ptr32, 4+requestSlots) = 0                         //its a request
 	for j := 4 + responseSlots + 1; j < 4+responseSlots+requestSlots+1; j++ {
 		*slotOffset(ptr32, j) = 0
@@ -233,4 +251,74 @@ func dumpMessage(ptr *uint32, numSlots int) {
 	for i := 0; i < numSlots; i++ {
 		print(i, ",", *slotOffset(ptr, i), "\n")
 	}
+}
+
+func SetFramebufferRes1024x768() *FrameBufferInfo {
+
+	ptr := sixteenByteAlignedPointer(uintptr(36 << 2)) //32 bit slots
+	ptr32 := ((*uint32)(unsafe.Pointer(ptr)))
+	mbox := (*sequenceOfSlots)(unsafe.Pointer(ptr32))
+
+	mbox.s[0].Set(35 * 4) //size in bytes
+	mbox.s[1].Set(MailboxRequest)
+
+	mbox.s[2].Set(MailboxTagSetPhysicalWidthHeight)
+	mbox.s[3].Set(8)
+	mbox.s[4].Set(8)
+	mbox.s[5].Set(1024) //Width
+	mbox.s[6].Set(768)  //Width
+
+	mbox.s[7].Set(MailboxTagSetVirtualWidthHeight)
+	mbox.s[8].Set(8)
+	mbox.s[9].Set(8)
+	mbox.s[10].Set(1024) //virtual Width
+	mbox.s[11].Set(768)  //virtual Height
+
+	mbox.s[12].Set(MailboxTagSetVirtualOffset)
+	mbox.s[13].Set(8)
+	mbox.s[14].Set(8)
+	mbox.s[15].Set(0) //x offset
+	mbox.s[16].Set(0) //y offset
+
+	mbox.s[17].Set(MailboxTagSetDepth)
+	mbox.s[18].Set(4)
+	mbox.s[19].Set(4)
+	mbox.s[20].Set(32) //depth
+
+	mbox.s[21].Set(MailboxTagSetPixelOrder)
+	mbox.s[22].Set(4)
+	mbox.s[23].Set(4)
+	mbox.s[24].Set(1) //RGB
+
+	mbox.s[25].Set(MailboxTagGetFramebuffer)
+	mbox.s[26].Set(8)
+	mbox.s[27].Set(8)
+	mbox.s[28].Set(4096)
+	mbox.s[29].Set(0)
+
+	mbox.s[30].Set(MailboxTagGetPitch)
+	mbox.s[31].Set(4)
+	mbox.s[32].Set(4)
+	mbox.s[33].Set(0) //Pitch
+
+	mbox.s[34].Set(MailboxTagLast) //we are done here
+	if !Call(MailboxChannelProperties, mbox) {
+		trust.Errorf("unable to send commands to mailbox for framebuffer setup")
+		return nil
+	}
+	//check on the response
+	fbuffer := mbox.s[28].Get()
+	result := &FrameBufferInfo{}
+	if mbox.s[20].Get() != 32 || fbuffer == 0 {
+		trust.Errorf("unable to set Width & Height of framebuffer to 1024,768")
+		return nil
+	}
+
+	fbuffer = fbuffer & 0x3FFFFFFF
+	mbox.s[28].Set(fbuffer)
+	result.Width = mbox.s[5].Get()
+	result.Height = mbox.s[6].Get()
+	result.Pitch = mbox.s[33].Get()
+	result.Buffer = (*byte)(unsafe.Pointer(uintptr(mbox.s[28].Get())))
+	return result
 }

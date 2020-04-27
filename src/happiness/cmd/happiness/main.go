@@ -54,7 +54,7 @@ func main() {
 		happiness.Console.Logf("!   Failed To read Board Revision!")
 	} else {
 		br := strings.ToLower(happiness.Console.Sprintf("%x", boardRevision))
-		happiness.Console.Logf("# %16s : %s (%s)", "Board Revision", br, boardRevisionDecode(br))
+		happiness.Console.Logf("# %16s : %s (%s)", "Board Revision", br, BoardRevisionDecode(br))
 	}
 	addr, ok := videocore.MACAddress()
 	printableMAC := happiness.Console.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x",
@@ -98,38 +98,4 @@ func main() {
 			}
 	*/
 	semihosting.Exit(0)
-}
-
-func boardRevisionDecode(s string) string {
-	switch s {
-	case "9020e0":
-		return "3A+, Revision 1.0, 512MB, Sony UK"
-	case "a02082":
-		return "3B, Revision 1.2, 1GB, Sony UK"
-	case "a020d3":
-		return "3B+, Revision 1.3, 1GB, Sony UK"
-	case "a22082":
-		return "3B, Revision 1.2, 1GB, Embest"
-	case "a220a0":
-		return "CM3, Revision 1.0, 1GB, Embest"
-	case "a32082":
-		return "3B, Revision 1.2, 1GB, Sony Japan"
-	case "a52082":
-		return "3B, Revision 1.2, 1GB, Stadium"
-	case "a22083":
-		return "3B, Revision 1.3, 1GB, Embest"
-	case "a02100":
-		return "CM3+, Revision 1.0, 1GB, Sony UK"
-	case "a03111":
-		return "4B, Revision 1.1, 2GB, Sony UK"
-	case "b03111":
-		return "4B, Revision 1.2, 2GB, Sony UK"
-	case "b03112":
-		return "4B, Revision 1.2, 2GB, Sony UK"
-	case "c03111":
-		return "4B, Revision 1.1, 4GB, Sony UK"
-	case "c03112":
-		return "4B, Revision 1.2, 4GB, Sony UK"
-	}
-	return "unknown board"
 }
