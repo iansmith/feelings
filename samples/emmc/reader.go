@@ -16,8 +16,8 @@ type fatDataReader struct {
 	tranquil     bufferManager
 	cluster      uint32
 	sector       uint32
-	sectorData   []byte // sectorSize
-	current      uint32 // [0, sectorSize)
+	sectorData   unsafe.Pointer // sectorSize
+	current      uint32         // [0, sectorSize)
 	finishedInit bool
 }
 
@@ -47,13 +47,17 @@ func (f *fatDataReader) Read(p []byte) (int, error) {
 	result := 0
 	//make the simple case fast
 	if f.current+uint32(l) < sectorSize {
-		copy(p[0:l], f.sectorData[f.current:int(f.current)+l])
+		for i := 0; i < l; i++ {
+			p[i] = *((*uint8)(unsafe.Pointer(uintptr(f.sectorData) + uintptr(f.current) + uintptr(i))))
+		}
 		f.current += uint32(l)
 		result = l
 	} else {
 		//this is the case of reading the remainder of this page
 		remaining := sectorSize - f.current
-		copy(p[0:remaining], f.sectorData[f.current:f.current+remaining])
+		for i := 0; i < int(remaining); i++ {
+			p[i] = *((*uint8)(unsafe.Pointer(uintptr(f.sectorData) + uintptr(f.current) + uintptr(i))))
+		}
 		f.current += remaining //makes it sectorSize
 		result = int(remaining)
 	}
@@ -136,9 +140,10 @@ func (f *fatDataReader) getMoreData() int {
 	}
 	if !f.endOfClusterChain() {
 		//fetch the next page
-		read := 0
-		read, f.sectorData = sdReadblock(f.sdcard.clusterNumberToSector(f.cluster), 1)
-		if read == 0 {
+		var err error
+		f.sectorData, err = f.tranquil.PossiblyLoad(f.sdcard.clusterNumberToSector(f.cluster))
+		if err != nil {
+			errorMessage("unable to read data sector: " + err.Error())
 			return bcm2835.SDError
 		}
 	}
