@@ -73,19 +73,26 @@ func main() {
 	rt.MiniUART = rt.NewUART()
 	_ = rt.MiniUART.Configure(rt.UARTConfig{ /*no interrupt*/ })
 	buffer := make([]byte, 512)
+
+	//for now, hold the buffers on stack
+	sectorCache := make([]byte, 0x200<<6) //0x40 pages
+	sectorBitSet := make([]uint64, 1)
+
 	if err := sdInit(); err == nil {
 		sdcard := fatGetPartition(buffer) //data read into this buffer
 		if sdcard == nil {
 			errorMessage("Unable to read MBR or unable to parse BIOS parameter block")
 		} else {
+			tranq := NewTraquilBufferManager(unsafe.Pointer(&sectorCache[0]), 0x40,
+				unsafe.Pointer(&sectorBitSet[0]), sdcard.readInto, nil)
 			var dir *fatDir = newFATDir()
 			var err error
 			var r int
 			entries := 0
 			buf := make([]byte, directoryEntrySize)
 			lfnSeq := ""
-			lfnSeqCurr := 0                                                    //lfn's numbered from 1
-			fr := newFATDataReader(sdcard.activePartition.rootCluster, sdcard) //get root directory
+			lfnSeqCurr := 0                                                           //lfn's numbered from 1
+			fr := newFATDataReader(sdcard.activePartition.rootCluster, sdcard, tranq) //get root directory
 		outer:
 			for {
 				curr := 0
@@ -108,7 +115,11 @@ func main() {
 				entries++
 				switch {
 				case dir.name[0] == directoryEnd:
-					fmt.Printf("directory entry: end of directory\n")
+					fmt.Printf("cache hits: %d, cache misses %d, cache hit %2.0f%%, ousters %d\n",
+						tranq.cacheHits, tranq.cacheMisses,
+						(float64(tranq.cacheHits)/(float64(tranq.cacheHits)+float64(tranq.cacheMisses)))*100.0,
+						tranq.cacheOusters)
+
 					break outer
 				case dir.name[0] == directoryEntryDeleted:
 					continue
@@ -157,4 +168,5 @@ func main() {
 	} else {
 		errorMessage("failed to launch")
 	}
+
 }

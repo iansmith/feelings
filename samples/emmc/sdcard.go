@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"feelings/src/hardware/bcm2835"
 	rt "feelings/src/tinygo_runtime"
 	"unsafe"
@@ -438,24 +439,40 @@ func waitCycles(n int) {
 	}
 }
 
+func (s *sdCardInfo) readInto(sector uint32, data unsafe.Pointer) error {
+	result := sdReadblockInto(sector, 1, (*uint32)(data))
+	if result == 0 {
+		errors.New("should be a read error type")
+	}
+	return nil
+}
+
+//reads into a buffer created on the heap
 func sdReadblock(lba uint32, num uint32) (int, []byte) {
+	buffer := make([]byte, sectorSize*num)
+	buf := (*uint32)(unsafe.Pointer(&buffer[0]))
+	read := sdReadblockInto(lba, num, buf)
+	return read, buffer
+}
+
+//reads num sectors starting at lba into a buffer
+//provided
+func sdReadblockInto(lba uint32, num uint32, buf *uint32) int {
 	var r, c, d int
 	c = 0
 	if num < 1 {
 		num = 1
 	}
-	buffer := make([]byte, sectorSize*num)
 	//infoMessage("--------> start reading n blocks, first block @: ", num, lba)
 	if sdStatus(bcm2835.SRDataInhibit) != 0 {
 		sd_err = bcm2835.SDTimeoutUnsigned
-		return 0, nil
+		return 0
 	}
-	buf := (*uint32)(unsafe.Pointer(&buffer[0]))
 	if sd_scr[0]&bcm2835.SCR_SUPP_CCS != 0 {
 		if num > 1 && (sd_scr[0]&bcm2835.SCR_SUPP_SET_BLKCNT != 0) {
 			sdSendCommand(bcm2835.CommandSetBlockcount, num)
 			if sd_err != 0 {
-				return 0, nil
+				return 0
 			}
 		}
 		bcm2835.EMCC.BlockSizAndCount.Set(uint32((num << 16) | 512))
@@ -465,7 +482,7 @@ func sdReadblock(lba uint32, num uint32) (int, []byte) {
 			sdSendCommand(bcm2835.CommandReadMulti, lba)
 		}
 		if sd_err != 0 {
-			return 0, nil
+			return 0
 		}
 	} else {
 		bcm2835.EMCC.BlockSizAndCount.Set((1 << 16) | 512)
@@ -475,14 +492,14 @@ func sdReadblock(lba uint32, num uint32) (int, []byte) {
 		if sd_scr[0]&bcm2835.SCR_SUPP_CCS == 0 {
 			sdSendCommand(bcm2835.CommandReadSingle, (lba+uint32(c))*sectorSize)
 			if sd_err != 0 {
-				return 0, nil
+				return 0
 			}
 		}
 		r = sdWaitForInterrupt(bcm2835.InterruptReadReady)
 		if r != 0 {
 			rt.MiniUART.WriteString("ERROR: Timeout waiting for ready to read\n")
 			sd_err = uint64(r)
-			return 0, nil
+			return 0
 		}
 		for d = 0; d < sectorSize/4; d++ {
 			*buf = bcm2835.EMCC.Data.Get()
@@ -499,12 +516,12 @@ func sdReadblock(lba uint32, num uint32) (int, []byte) {
 	}
 	//did it blow up?
 	if sd_err != bcm2835.SDOk {
-		return int(sd_err), nil
+		return int(sd_err)
 	}
 	//did we read the right amt?
 	if c != int(num) {
-		return 0, nil
+		return 0
 	}
 	//infoMessage("--------> done reading n bytes: ", uint32(len(buffer)))
-	return int(num) * sectorSize, buffer
+	return int(num) * sectorSize
 }

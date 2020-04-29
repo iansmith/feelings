@@ -13,6 +13,7 @@ import (
 // 3.each byte of each sector
 type fatDataReader struct {
 	sdcard       *sdCardInfo
+	tranquil     bufferManager
 	cluster      uint32
 	sector       uint32
 	sectorData   []byte // sectorSize
@@ -20,10 +21,11 @@ type fatDataReader struct {
 	finishedInit bool
 }
 
-func newFATDataReader(cluster uint32, sdcard *sdCardInfo) *fatDataReader {
+func newFATDataReader(cluster uint32, sdcard *sdCardInfo, t bufferManager) *fatDataReader {
 	dr := &fatDataReader{
-		cluster: cluster,
-		sdcard:  sdcard,
+		cluster:  cluster,
+		sdcard:   sdcard,
+		tranquil: t,
 	}
 	//we want to initialize the page data
 	if e := dr.getMoreData(); e != bcm2835.SDOk {
@@ -89,19 +91,28 @@ func (f *fatDataReader) getNextClusterInChain() (uint32, int) {
 		return f.cluster, bcm2835.SDOk
 	}
 	var next uint32
+
+	//load the needed page
+	distance := uintptr(f.cluster) << 2
 	if f.sdcard.activePartition.isFat16 {
-		//consider this fat an array of uint16
-		base := (*uint16)(unsafe.Pointer(&f.sdcard.activePartition.fat[0]))
-		base = (*uint16)(unsafe.Pointer(uintptr(unsafe.Pointer(base)) + uintptr(((f.cluster) << 1)))) // <<1 is because 2 bytes per
+		distance = uintptr(f.cluster) << 1
+	}
+	sectorOfFAT := distance >> 9 // divide by sectorSize
+	ptr, err := f.tranquil.PossiblyLoad(f.sdcard.activePartition.fatOrigin + uint32(sectorOfFAT))
+	if err != nil {
+		errorMessage("error reading fat sector " + err.Error())
+		return 0, bcm2835.SDError
+	}
+	offset := distance % sectorSize
+
+	if f.sdcard.activePartition.isFat16 {
+		base := (*uint16)(unsafe.Pointer(uintptr(ptr) + uintptr(offset))) // <<1 is because 2 bytes per
 		next = uint32(*base)
 	} else {
-		//consider this fat an array of uint32
-		base := (*uint32)(unsafe.Pointer(&f.sdcard.activePartition.fat[0]))
-		base = (*uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(base)) + uintptr(((f.cluster) << 2)))) // <<2 is because 4 bytes per
+		base := (*uint32)(unsafe.Pointer(uintptr(ptr) + uintptr(offset))) // <<2 is because 4 bytes per
 		next = *base
 	}
 	f.cluster = next
-	//infoMessage("next cluster is ", next)
 	if f.sdcard.activePartition.isFat16 {
 		warnFAT16ChainValue(next)
 	} else {

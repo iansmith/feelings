@@ -227,12 +227,6 @@ func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in set
 		sdCard.activePartition.fatSize = (uint32(bpbFull.Nf) * uint32(bpbFull.Spf16))
 		sdCard.activePartition.isFat16 = true
 	}
-	//read whole fat into ram
-	read, sdCard.activePartition.fat = sdReadblock(sdCard.activePartition.fatOrigin, bpbFull.fat32.FATSize32)
-	if read == 0 {
-		errorMessage("failed to read FAT")
-		return nil
-	}
 	return &sdCard
 }
 
