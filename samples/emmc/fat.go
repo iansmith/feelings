@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"feelings/src/golang/encoding/binary"
 	"feelings/src/golang/fmt"
 	rt "feelings/src/tinygo_runtime"
@@ -28,8 +29,25 @@ const showCommands = false
 const fat32EOCBoundary = 0xFFFFFF8 //anything at or above this is EOC
 const fat16EOCBoundary = 0xFFF8    //anything at or above this is EOC
 const showWarn = true
+const sizeOfPackedBpbShared = 0x24
+const mbrUnusedSize = 446
+const sizeOfPackedPartitionInfo = 0x10
+const directoryEnd = 0x0
+const directoryEntryDeleted = 0xE5
+const directoryEntryLFN = 0xF
+const attributeSubdirectory = 0x10
+const lowercaseName = 0x10
+const lowercaseExt = 0x8
 
-var partitionlba = uint32(0)
+//var partitionlba = uint32(0)
+
+type fat32LFN struct { //used after we confirmed the raw values are ok
+	sequenceNumber  byte
+	isLast          bool
+	isFirstPhysical bool
+	segment         string
+	firstClusterLo  uint16
+}
 
 type rawFat32LFN struct {
 	SequenceNumber  byte
@@ -40,39 +58,6 @@ type rawFat32LFN struct {
 	name1           [6]uint16
 	FirstCluster    uint16
 	name2           [2]uint16
-}
-
-type fat32LFN struct { //used after we confirmed the raw values are ok
-	sequenceNumber byte
-	isLast         bool
-	segment        string
-	firstClusterLo uint16
-}
-
-type BIOSParamBlock struct { //in the Volume Boot Record
-	jump  [3]uint8  //0x0
-	oem   [8]uint8  //0x3
-	Bps0  uint8     //0xB
-	Bps1  uint8     //0xC
-	Spc   uint8     //0xD sectors per clusters
-	Rsc   uint16    //0xE  reserved sector count
-	Nf    uint8     //0x10  number of fats
-	Nr0   uint8     //0x11  number root entries 0
-	Nr1   uint8     //0x12 number root entries 1
-	Ts16  uint16    //0x13 total sectors
-	Media uint8     //0x15  media descriptors
-	Spf16 uint16    //0x16 sectors per fat
-	Spt   uint16    //0x18  sectors per track
-	Nh    uint16    //0x1A  number of heads
-	Hs    uint32    //0x1C  hidden sectors
-	Ts32  uint32    //0x20
-	Spf32 uint32    //0x24  sectors per fat
-	Flg   uint32    //0x28 flags and version (last two)
-	Rc    uint32    //0x2C  root cluster
-	vol   [6]uint8  //0x30
-	fst   [8]uint8  //0x36  file system type
-	dmy   [20]uint8 //0x3E
-	fst2  [8]uint8  // 0x52 file system type
 }
 
 type fatDir struct {
@@ -129,97 +114,181 @@ func strlenWithTerminator(p []uint8, terminator uint8) int {
  * so that we know where our FAT file system starts, and
  * read that volume's BIOS Parameter Block
  */
-func fatGetPartition(buffer []uint8) *BIOSParamBlock {
+func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in setup by Init
+	sdCard := sdCardInfo{}
 	read, buffer := sdReadblock(0, 1)
 	if read == 0 {
 		return nil
 	}
-	if buffer[510] != 0x55 || buffer[511] != 0xAA {
-		errorMessage("bad magic number in MBR")
-		return nil
-	}
-	//// check partition type
-	if buffer[0x1C2] != 0xE /*FAT16 LBA*/ && buffer[0x1C2] != 0xC /*FAT32 LBA*/ && buffer[0x1C2] != 0xB {
-		errorMessage("Wrong partition type")
-		return nil
-	}
-	partitionlba = uint32(buffer[0x1C6]) + (uint32(buffer[0x1C7]) << 8) + (uint32(buffer[0x1C8]) << 16) +
-		(uint32(buffer[0x1C9]) << 24)
-
-	read, buffer = sdReadblock(partitionlba, 1)
-	if read == 0 {
-		errorMessage("Unable to read boot record")
-		return nil
-	}
-	bpb := newBIOSParamBlock()
+	//we need to check and see if boot sector...
+	bpb := biosParamBlockShared{}
 	if !bpb.unpack(buffer) {
 		return nil
 	}
-	if bpb.Spf16 > 0 && bpb.Rsc > 0 {
-		errorMessage("fat16 should not have reserved sectors")
+	if bpb.jump[0] != 0xE9 && bpb.jump[0] != 0xEB {
+		mbrData := bytes.NewBuffer(buffer)
+		var mbr mbrInfo
+		if err := binary.Read(mbrData, binary.LittleEndian, &mbr); err != nil {
+			errorMessage("unable to read MBR: " + err.Error())
+			return nil
+		}
+		if mbr.Signature != 0xaa55 {
+			errorMessage("bad magic number in MBR")
+			return nil
+		}
+		if err := unpackPartitionBuffer(buffer, mbrUnusedSize, 0, sizeOfPackedPartitionInfo, &mbr.Partition1); err != nil {
+			return nil
+		}
+		if err := unpackPartitionBuffer(buffer, mbrUnusedSize, sizeOfPackedPartitionInfo, 2*sizeOfPackedPartitionInfo, &mbr.Partition2); err != nil {
+			return nil
+		}
+		if err := unpackPartitionBuffer(buffer, mbrUnusedSize, sizeOfPackedPartitionInfo*2, 3*sizeOfPackedPartitionInfo, &mbr.Partition3); err != nil {
+			return nil
+		}
+		if err := unpackPartitionBuffer(buffer, mbrUnusedSize, sizeOfPackedPartitionInfo*3, 4*sizeOfPackedPartitionInfo, &mbr.Partition4); err != nil {
+			return nil
+		}
+		sdCard.activePartition.unusedSectors = mbr.Partition1.FirstSector // FAT16 needs this value so hold it
+		//try again for BPB at firstDataSector
+		read, buffer = sdReadblock(mbr.Partition1.FirstSector, 1)
+		if read == 0 {
+			return nil
+		}
+		bpb = biosParamBlockShared{}
+		if !bpb.unpack(buffer) {
+			return nil
+		}
+		if bpb.jump[0] != 0xE9 && bpb.jump[0] != 0xEB {
+			errorMessage("did not find a BIOS Parameter Block")
+			return nil
+		}
 	}
-	if !(bpb.fst[0] == 'F' && bpb.fst[1] == 'A' && bpb.fst[2] == 'T') &&
-		!(bpb.fst2[0] == 'F' && bpb.fst2[1] == 'A' && bpb.fst2[2] == 'T') {
-		errorMessage("ERROR: Unknown file system type")
+	// we have only read the shared part, so read extension as appropriate
+	var ext16 *biosParamBlockFat16Extension
+	var ext32 *biosParamBlockFat32Extension
+	if bpb.Spf16 > 0 && bpb.NumRootEntries > 0 {
+		ext16 := &biosParamBlockFat16Extension{}
+		if ext16.unpack(buffer[sizeOfPackedBpbShared:]) {
+			return nil
+		}
+	} else {
+		ext32 = &biosParamBlockFat32Extension{}
+		if !ext32.unpack(buffer[sizeOfPackedBpbShared:]) {
+			return nil
+		}
+	}
+	bpbFull := newBIOSParamBlock(&bpb, ext16, ext32)
+	sdCard.activePartition.bytesPerSector = uint32(bpbFull.BytesPerSector) // Bytes per sector on partition
+	sdCard.activePartition.sectorsPerCluster = uint32(bpbFull.Spc)         // Hold the sector per cluster count
+	sdCard.activePartition.reservedSectorCount = uint32(bpbFull.Rsc)       // Hold the reserved sector count
+
+	if !bpbFull.isFat16 { // Check if FAT16/FAT32
+		// FAT32
+		sdCard.activePartition.rootCluster = bpbFull.fat32.RootCluster // Hold partition root cluster
+		sdCard.activePartition.fatOrigin = uint32(bpbFull.Rsc) + bpbFull.Hs + sdCard.activePartition.unusedSectors
+		infoMessage("FAT32 Partition Info FAT Origin : ", sdCard.activePartition.fatOrigin)
+		sdCard.activePartition.dataSectors = bpbFull.Ts32 - uint32(bpbFull.Rsc) - (bpbFull.fat32.FATSize32 * uint32(bpbFull.Nf))
+		//sdCard.partition.dataSectors = bpb->TotalSectors32 - bpb->ReservedSectorCount - (bpb->FSTypeData.fat32.FATSize32 * bpb->NumFATs);
+		infoMessage("FAT32 Partition Info Total Sectors : ", bpbFull.Ts32)
+		infoMessage("FAT32 Partition Info Data Sectors : ", sdCard.activePartition.dataSectors)
+		if bpbFull.fat32.BootSig != 0x29 {
+			errorMessage("FAT32 volume has bad boot signature: ", uint32(ext32.BootSig))
+			return nil
+		}
+		fmt.Printf("FAT32 Volume Label: '%s', ID: %08x\n",
+			string(ext32.volumeLabel[:]), ext32.VolumeID) //xxx because of problem in tinyo reflection with bpbfull
+		sdCard.activePartition.fatSize = (uint32(bpbFull.Nf) * uint32(bpbFull.fat32.FATSize32))
+
+		if bpbFull.fat32.fileSystemType[0] != 'F' ||
+			bpbFull.fat32.fileSystemType[1] != 'A' ||
+			bpbFull.fat32.fileSystemType[2] != 'T' {
+			errorMessage("Wrong filesystem type (not FAT)")
+		}
+	} else {
+		// FAT16
+		sdCard.activePartition.rootCluster = 2 // Hold partition root cluster, FAT16 always start at 2
+		sdCard.activePartition.fatOrigin = sdCard.activePartition.unusedSectors + (uint32(bpbFull.Nf) * uint32(bpbFull.Spf16)) + 1
+		// data sectors x sectorsize = capacity ... I have check this on PC and gives right calc
+		sdCard.activePartition.dataSectors = bpbFull.Ts32 - (uint32(bpbFull.Nf) * uint32(bpbFull.Spf16)) - 33
+		infoMessage("FAT16 reserved sectors: ", uint32(bpbFull.Rsc))
+		infoMessage("FAT16 FAT origin sector: ", uint32(sdCard.activePartition.fatOrigin))
+		fmt.Printf("FAT32 Volume Label: %s, ID: %08x\n",
+			bpbFull.fat16.volumeLabel, bpbFull.fat16.VolumeID)
+		if bpbFull.fat16.BootSig != 0x29 {
+			errorMessage("FAT16 volume has bad boot signature: ", uint32(bpbFull.fat16.BootSig))
+			return nil
+		}
+		if bpbFull.fat16.fileSystemType[0] != 'F' ||
+			bpbFull.fat16.fileSystemType[1] != 'A' ||
+			bpbFull.fat16.fileSystemType[2] != 'T' {
+			errorMessage("Wrong filesystem type (not FAT)")
+			return nil
+		}
+		sdCard.activePartition.fatSize = (uint32(bpbFull.Nf) * uint32(bpbFull.Spf16))
+		sdCard.activePartition.isFat16 = true
+	}
+	//read whole fat into ram
+	read, sdCard.activePartition.fat = sdReadblock(sdCard.activePartition.fatOrigin, bpbFull.fat32.FATSize32)
+	if read == 0 {
+		errorMessage("failed to read FAT")
 		return nil
 	}
-	buffer = nil //safety
-	return bpb
+	return &sdCard
+}
+
+func (s *sdCardInfo) clusterNumberToSector(clusterNumber uint32) uint32 {
+	return ((clusterNumber - 2) * s.activePartition.sectorsPerCluster) + s.activePartition.fatOrigin + s.activePartition.fatSize
+}
+
+//func getFirstSector(clusterNumber uint32, sectorPerCluster uint32, firstDataSector uint32) uint32 {
+//	return (((clusterNumber - 2) * sectorPerCluster) + firstDataSector)
+//}
+
+func locateFATEntry(filename string, info *sdCardInfo) error {
+	startSector := info.clusterNumberToSector(info.activePartition.rootCluster)
+	read, _ := sdReadblock(startSector, 1)
+	if read == 0 {
+		return errors.New("unable to read start sector")
+	}
+
+	return nil
 }
 
 /**
  * Find a file in root directory entries, root directory is exactly 1 sector?
  */
-func fatGetCluster(fn string, bpb *BIOSParamBlock) uint32 {
-	var root_sec, s uint32
+func fatGetCluster(fn string, sdcard *sdCardInfo) uint32 {
+	var items uint32 //only set by fat16
 
-	var size uint32
-	if bpb.Spf16 != 0 {
-		size = uint32(bpb.Spf16)
-	} else {
-		size = bpb.Spf32
-	}
-	size = size * uint32(bpb.Nf)
-	root_sec = size + uint32(bpb.Rsc)
-	s = (uint32(bpb.Nr0) + (uint32(bpb.Nr1) << 8)) * /*uint32(unsafe.Sizeof(fatDir))*/ directoryEntrySize
-	if bpb.Spf16 == 0 { //adjust for fat32?
-		root_sec += (bpb.Rc - 2) * uint32(bpb.Spc)
-		infoMessage("root cluster:", bpb.Rc, uint32(bpb.Spc))
-	}
-	root_sec += partitionlba
-	infoMessage("root sector:", root_sec)
-	infoMessage("numerator:", s)
+	rootSector := sdcard.clusterNumberToSector(sdcard.activePartition.rootCluster)
 
+	if sdcard.activePartition.isFat16 {
+		panic("isfat16 not implemented yet")
+	}
 	// load the root directory
-	read, rootDir := sdReadblock(root_sec, s/512+1)
-	infoMessage("read block:", s/512+1, uint32(read), (uint32(bpb.Nr0) + (uint32(bpb.Nr1) << 8)))
+	read, rootDir := sdReadblock(rootSector, items/sectorSize+1)
+	infoMessage("read block:", items/sectorSize+1, uint32(read))
 	if read != 0 {
-		for dptr := uintptr(0); dptr < uintptr(512+512); dptr = dptr + directoryEntrySize {
+		for dptr := uintptr(0); dptr < uintptr(sectorSize); dptr = dptr + directoryEntrySize {
+			//rt.MiniUART.Dump(unsafe.Pointer(&rootDir[0]))
 			dirEntryBuffer := rootDir[dptr : dptr+directoryEntrySize]
 			dir := newFATDir()
 			if !dir.unpack(dirEntryBuffer) {
 				return 0
 			}
-			if dir.name[0] == 0 {
+			if dir.name[0] == directoryEnd {
 				infoMessage("bailing out because found end of list entry @ position: ", uint32(dptr/directoryEntrySize))
 				break
 			}
-			if dir.name[0] == 0xE5 {
+			if dir.name[0] == directoryEntryDeleted {
+				infoMessage("skipping because deleted at @ position: ", uint32(dptr/directoryEntrySize))
 				continue
 			}
-			if dir.Attrib == 0xF {
+			if dir.Attrib == directoryEntryLFN {
+				infoMessage("found long filename @: ", uint32(dptr/directoryEntrySize))
 				lfn := longFilename(dirEntryBuffer)
 				infoMessage("long filename segment found: " + lfn.segment)
 				continue
-			}
-			nameLen := strlenWithTerminator(dir.name[:], ' ')
-			extLen := strlenWithTerminator(dir.ext[:], ' ')
-
-			if compareBytewise(append(dir.name[:nameLen], dir.ext[:extLen]...), fn, nameLen+extLen) {
-				start := uint32(dir.FirstClusterHi)<<16 | uint32(dir.FirstClusterLo)
-				infoMessage("FAT File "+fn+" starts at cluster ", (uint32(dir.FirstClusterHi)<<16)|uint32(dir.FirstClusterLo))
-				// if so, return starting cluster
-				return start
 			}
 		}
 		return 0
@@ -228,30 +297,6 @@ func fatGetCluster(fn string, bpb *BIOSParamBlock) uint32 {
 		//fallthrough
 	}
 	return 0
-}
-
-func (b *BIOSParamBlock) unpack(buffer []uint8) bool {
-	buf := bytes.NewBuffer(buffer)
-	//rt.MiniUART.Dump(unsafe.Pointer(&buf.Bytes()[0]))
-
-	//hack := BIOSParamBlock{}
-	err := binary.Read(buf, binary.LittleEndian, b)
-	if err != nil {
-		errorMessage("failed to read binary data for bios param block: " + err.Error())
-		return false
-	}
-	copy(b.jump[0:3], buffer[0:3])
-	copy(b.oem[0:8], buffer[3:11])
-	copy(b.vol[0:6], buffer[0x30:0x30+6])
-	copy(b.fst[0:8], buffer[0x36:0x36+8])
-	copy(b.fst2[0:8], buffer[0x52:0x52+8])
-	infoMessage("unpacking bpb:", uint32(b.Nr0), uint32(b.Nr1))
-	return true
-}
-
-func newBIOSParamBlock() *BIOSParamBlock {
-	result := BIOSParamBlock{}
-	return &result
 }
 
 func newFATDir() *fatDir {
@@ -276,48 +321,20 @@ func (f *fatDir) unpack(buffer []uint8) bool {
 /**
  * Read a file into memory
  */
-func fatReadfile(cluster uint32, bpb *BIOSParamBlock, partitionlba uint32) []byte {
-	var data_sec, s uint32
+func fatReadfile(cluster uint32, sdcard *sdCardInfo) []byte {
 
-	// find the LBA of the first data sector
-	if bpb.Spf16 > 0 {
-		data_sec = uint32(bpb.Spf16)
-	} else {
-		data_sec = bpb.Spf32
-	}
-	data_sec *= uint32(bpb.Nf)
-	data_sec += uint32(bpb.Rsc)
-	//data_sec=((bpb->spf16?bpb->spf16:bpb->spf32)*bpb->nf)+bpb->rsc;
-	s = (uint32(bpb.Nr0) + (uint32(bpb.Nr1) << 8)) * directoryEntrySize
-	//s = (bpb->nr0 + (bpb->nr1 << 8)) * sizeof(fatdir_t);
-	if bpb.Spf16 > 0 {
-		// adjust for FAT16
-		data_sec += (s + 511) >> 9
-	}
-	// add partition LBA
-	data_sec += partitionlba
 	// dump important properties
-	infoMessage("FAT Bytes per Sector: ", uint32(bpb.Bps0)+(uint32(bpb.Bps1)<<8))
-	infoMessage("FAT Sectors per Cluster: ", uint32(bpb.Spc))
-	infoMessage("FAT Number of FAT: ", uint32(bpb.Nf))
-	spf := bpb.Spf32
-	if bpb.Spf16 > 0 {
-		spf = uint32(bpb.Spf16)
-	}
-	infoMessage("FAT Sectors per FAT: ", spf)
-	infoMessage("FAT Reserved Sectors Count: ", uint32(bpb.Rsc))
-	infoMessage("FAT First data sector: ", data_sec)
-	// load FAT table
-	result := []byte{}
-	num := bpb.Spf32
-	if bpb.Spf16 > 0 {
-		num = uint32(bpb.Spf16)
-	}
-	read, fatTable := sdReadblock(partitionlba+1+uint32(bpb.Rsc), num)
+	infoMessage("FAT Bytes per Sector: ", sdcard.activePartition.bytesPerSector)
+	infoMessage("FAT Sectors per Cluster: ", sdcard.activePartition.sectorsPerCluster)
+	infoMessage("FAT Reserved Sectors Count: ", sdcard.activePartition.reservedSectorCount)
+
+	//read, fatTable := sdReadblock(sdcard.activePartition.firstDataSector, 1)
+	read, fatTable := sdReadblock(0x820, 0x3f1)
 	if read == 0 {
 		errorMessage("failed to read FAT")
 		return nil
 	}
+
 	eoc := uint32(fat32EOCBoundary)
 	unusual0 := uint32(0xFFFFFFF0)
 	unusual1 := uint32(0xFFFFFFF1)
@@ -328,7 +345,7 @@ func fatReadfile(cluster uint32, bpb *BIOSParamBlock, partitionlba uint32) []byt
 	formatFiller := uint32(0xFFFFFFF6)
 	badSector := uint32(0xFFFFFFF7)
 
-	if bpb.Spf16 > 0 {
+	if sdcard.activePartition.isFat16 {
 		eoc = uint32(fat16EOCBoundary)
 		unusual0 = uint32(0xFFF0)
 		unusual1 = uint32(0xFFF1)
@@ -339,6 +356,7 @@ func fatReadfile(cluster uint32, bpb *BIOSParamBlock, partitionlba uint32) []byt
 		formatFiller = uint32(0xFFF6)
 		badSector = uint32(0xFFF7)
 	}
+	result := []byte{}
 	for cluster > 1 && cluster < eoc {
 		switch cluster {
 		case unusual0, unusual1, unusual2, unusual3, unusual4, unusual5:
@@ -348,23 +366,24 @@ func fatReadfile(cluster uint32, bpb *BIOSParamBlock, partitionlba uint32) []byt
 		case badSector:
 			warnMessage("ignoring bad sector value cluster chain:", cluster)
 		}
-		read, buffer := sdReadblock((cluster-2)*uint32(bpb.Spc)+data_sec, uint32(bpb.Spc))
+		read, buffer := sdReadblock(((cluster-2)*uint32(sdcard.activePartition.sectorsPerCluster))+(2*0x3f1)+0x821,
+			sdcard.activePartition.sectorsPerCluster)
 		if read == 0 {
-			errorMessage("unable to read cluster for file")
+			errorMessage("unable to read cluster for file", (cluster-2)*uint32(sdcard.activePartition.sectorsPerCluster)+(2*0x3f1))
 			return nil
 		}
 		result = append(result, buffer...)
 		// get the next cluster in chain
 		var next uint32
-		if bpb.Spf16 > 0 {
+		if sdcard.activePartition.isFat16 {
 			//consider this fat an array of uint16
 			base := (*uint16)(unsafe.Pointer(&fatTable[0]))
-			base = (*uint16)(unsafe.Pointer(uintptr(unsafe.Pointer(base)) + uintptr((cluster << 1)) - 512)) // <<1 is because 2 bytes per
+			base = (*uint16)(unsafe.Pointer(uintptr(unsafe.Pointer(base)) + uintptr(((cluster) << 1)) - 512)) // <<1 is because 2 bytes per
 			next = uint32(*base)
 		} else {
 			//consider this fat an array of uint32
 			base := (*uint32)(unsafe.Pointer(&fatTable[0]))
-			base = (*uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(base)) + uintptr((cluster << 2)) - /*512*/ 0)) // <<2 is because 4 bytes per
+			base = (*uint32)(unsafe.Pointer(uintptr(unsafe.Pointer(base)) + uintptr(((cluster) << 2)) - /*512*/ 0)) // <<2 is because 4 bytes per
 			next = *base
 		}
 		cluster = next
@@ -373,11 +392,16 @@ func fatReadfile(cluster uint32, bpb *BIOSParamBlock, partitionlba uint32) []byt
 	return result
 }
 
-func errorMessage(s string) {
+func errorMessage(s string, values ...uint32) {
 	if showErrors {
 		fmt.Printf("ERROR:" + s + "\n")
 	}
+	for _, v := range values {
+		fmt.Printf("%08x ", v)
+	}
+	fmt.Printf("\n")
 }
+
 func infoMessage(s string, values ...uint32) {
 	if showInfo {
 		fmt.Printf("INFO " + s)
@@ -404,8 +428,9 @@ func longFilename(in []byte) *fat32LFN {
 		errorMessage("Unable to decode binary format for long filename" + err.Error())
 		return nil
 	}
+	buffer.Reset()
 	offset := 1
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 5; i++ {
 		raw.name0[i] = uint16(in[(i*2)+1+offset])<<8 + uint16(in[i*2+offset])
 	}
 	offset = 0xE
@@ -414,7 +439,7 @@ func longFilename(in []byte) *fat32LFN {
 	}
 	offset = 0x1C
 	for i := 0; i < 2; i++ {
-		raw.name1[i] = uint16(in[(i*2)+1+offset])<<8 + uint16(in[i*2+offset])
+		raw.name2[i] = uint16(in[(i*2)+1+offset])<<8 + uint16(in[i*2+offset])
 	}
 	if raw.Attributes != 0xF || raw.FirstCluster != 0 || raw.Type != 0 {
 		warnMessage("badly formed fat32 long filename record: ",
@@ -425,6 +450,9 @@ func longFilename(in []byte) *fat32LFN {
 	output.isLast = false
 	if raw.SequenceNumber&0x40 > 0 {
 		output.isLast = true
+	}
+	if raw.SequenceNumber&0x20 > 0 {
+		output.isFirstPhysical = true
 	}
 	sn := raw.SequenceNumber & 0x1F
 	output.sequenceNumber = sn
@@ -437,7 +465,7 @@ func longFilename(in []byte) *fat32LFN {
 	done := false
 	var holdChars [14]uint16
 outer0:
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 5; i++ {
 		switch raw.name0[i] {
 		case 0x0, 0xffff:
 			done = true
@@ -447,6 +475,7 @@ outer0:
 			count++
 		}
 	}
+	//fmt.Printf("----0 holdchars(%d) '%+v'\n", count, holdChars)
 	if !done {
 	outer1:
 		for i := 0; i < 6; i++ {
@@ -460,6 +489,7 @@ outer0:
 			}
 		}
 	}
+	//fmt.Printf("----1 holdchars(%d) '%+v'\n", count, holdChars)
 	if !done {
 	outer2:
 		for i := 0; i < 2; i++ {
@@ -473,6 +503,8 @@ outer0:
 			}
 		}
 	}
+	//fmt.Printf("----2 holdchars(%d) '%+v'\n", count, holdChars)
+
 	runes := make([]rune, count)
 	ct := 0
 	for i := 0; i < int(count); i++ {
@@ -495,6 +527,7 @@ outer0:
 		runes[ct] = utf16.DecodeRune(r, r2)
 		ct++
 	}
+
 	output.segment = string(runes)
 	return output
 }
@@ -539,4 +572,13 @@ func iterate(buffer []byte, fn string, temp uint32) uint32 {
 		}
 	}
 	return 0
+}
+
+func unpackPartitionBuffer(buffer []byte, initialPadding int, start int, end int, part *partitionInfo) error {
+	pbuf := bytes.NewBuffer(buffer[initialPadding+start : initialPadding+end])
+	if err := binary.Read(pbuf, binary.LittleEndian, part); err != nil {
+		errorMessage("unable to read partition descriptor of partition 1:" + err.Error())
+		return err
+	}
+	return nil
 }
