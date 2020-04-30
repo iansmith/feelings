@@ -3,7 +3,6 @@ package main
 import (
 	"feelings/src/golang/strings"
 	"feelings/src/golang/time"
-	"feelings/src/lib/trust"
 	"feelings/src/std/os"
 )
 
@@ -11,13 +10,13 @@ type PosixErrorName uint32
 
 const (
 	None   PosixErrorName = 0
-	Access PosixErrorName = 1
-	BadF   PosixErrorName = 2
-	MFile  PosixErrorName = 3
-	NFile  PosixErrorName = 4
-	NoEnt  PosixErrorName = 5
-	NoMem  PosixErrorName = 6
-	NotDir PosixErrorName = 7
+	Access PosixErrorName = 13
+	BadF   PosixErrorName = 9
+	MFile  PosixErrorName = 24
+	NFile  PosixErrorName = 23
+	NoEnt  PosixErrorName = 2
+	NoMem  PosixErrorName = 12
+	NotDir PosixErrorName = 20
 
 	Unknown PosixErrorName = 0xffff
 )
@@ -50,14 +49,14 @@ func (p PosixErrorName) String() string {
 }
 
 var posixErrorTable = map[PosixErrorName]string{
-	None:    "No error.",
-	Access:  "Permission denied.",
-	MFile:   "The per-process limit on the number of open file descriptors has been reached.",
-	BadF:    "%d is not a valid file descriptor.",
-	NFile:   "The system-wide limit on the total number of open files has been reached.",
-	NoEnt:   "Directory does not exist (or is an empty string).",
-	NoMem:   "Insufficient memory to complete the operation.",
-	NotDir:  "%s is not a directory.",
+	None:    "No error",
+	Access:  "Permission denied",
+	MFile:   "Too many open files",
+	BadF:    "Bad file number",
+	NFile:   "File table overflow",
+	NoEnt:   "No such file or directory",
+	NoMem:   "Out of memory",
+	NotDir:  "Not a directory",
 	Unknown: "Unknown error occurred.",
 }
 
@@ -189,7 +188,4 @@ func (d *Dir) addEntry(longName string, raw *rawDirEnt) {
 	}
 	entry.Inode = inode
 	d.contents = append(d.contents, entry)
-	trust.Infof("%s: write=%s,create=%v,access=%v", entry.Name, entry.LastWrite.Format(time.UnixDate),
-		entry.Create.Format(time.UnixDate), entry.LastAccess.Format(time.UnixDate))
-
 }

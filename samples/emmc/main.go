@@ -1,7 +1,9 @@
 package main
 
 import (
+	"feelings/src/golang/io"
 	"feelings/src/lib/trust"
+	"fmt"
 
 	"unsafe"
 
@@ -32,11 +34,24 @@ func main() {
 			tranq := NewTraquilBufferManager(unsafe.Pointer(&sectorCache[0]), 0x40,
 				unsafe.Pointer(&sectorBitSet[0]), sdcard.readInto, nil)
 			fs := NewFAT32Filesystem(tranq, sdcard)
-			dir, err := fs.OpenDir("/")
+			rd, err := fs.Open("/etc/init.d/procps")
 			if err != nil {
-				trust.Errorf("could not open /", err.Error())
-			} else {
-				trust.Infof("dir has %d entries", len(dir.contents))
+				trust.Errorf("unable to open path: %s", err.Error())
+			}
+			buffer := make([]uint8, 256)
+			for {
+				n, err := rd.Read(buffer)
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					trust.Errorf("failed reading file: %s", err.Error())
+				}
+				if n == 0 {
+					continue
+				}
+				s := string(buffer[n])
+				fmt.Printf(s)
 			}
 		}
 	}

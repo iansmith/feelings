@@ -30,6 +30,7 @@ func newFATDataReader(cluster uint32, sdcard *sdCardInfo, t bufferManager) *fatD
 	}
 	//we want to initialize the page data
 	if e := dr.getMoreData(); e != bcm2835.SDOk {
+		trust.Errorf("unable to setup the FAT data reader, can't get initial data %d", cluster)
 		return nil
 	}
 	return dr
@@ -78,9 +79,11 @@ func (f *fatDataReader) Read(p []byte) (int, error) {
 	return result, nil
 returnError:
 	if isError {
+		trust.Errorf("error occured reading the sector of FAT32")
 		return 0, errors.New("need to return a better error code from read")
 	}
 	if atEOF {
+		trust.Errorf("reached the end of the last FAT32 page")
 		return 0, io.EOF
 	}
 	panic("unknown read state")

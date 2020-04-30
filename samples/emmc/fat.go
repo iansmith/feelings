@@ -5,6 +5,7 @@ import (
 	"feelings/src/golang/encoding/binary"
 	"feelings/src/golang/io"
 	"feelings/src/golang/path/filepath"
+	"feelings/src/golang/strings"
 	"feelings/src/golang/unicode/utf16"
 	"feelings/src/lib/trust"
 )
@@ -377,12 +378,63 @@ func (f *FAT32Filesystem) ReadDir(path string, entries []*DirEnt) *PosixError {
 }
 
 // OpenDir returns a directory pointer that you can then call ReadDir on, or it returns null.
-func (f *FAT32Filesystem) OpenDir(path string) (*Dir, *PosixError) {
-	path = filepath.Clean(path)
-	if path == "/" {
-		return f.readDirFromSector(path, f.sdcard.activePartition.rootCluster)
+func (f *FAT32Filesystem) openRootDir() (*Dir, *PosixError) {
+	return f.readDirFromSector("/", f.sdcard.activePartition.rootCluster)
+}
+
+func (f *FAT32Filesystem) Open(path string) (io.Reader, *PosixError) {
+	entry, err := f.resolvePath(path, true)
+	if err != nil {
+		return nil, err
 	}
-	panic("not implemented")
+	reader := newFATDataReader(uint32(entry.firstClusterHi)*256+uint32(entry.firstClusterLo), f.sdcard, f.tranq)
+	if reader != nil {
+		trust.Errorf("unable!\n")
+		return nil, EUnknown // xxxx errors.New("should be the correct error here")
+	}
+	return reader, nil
+}
+
+func (f *FAT32Filesystem) openDirFromEntry(entry *DirEnt) (*Dir, *PosixError) {
+	trust.Debugf("openDirFromEntry %s", entry.Name)
+	path := filepath.Clean(entry.Path)
+	return f.readDirFromSector(path, uint32(entry.firstClusterHi)*256+uint32(entry.firstClusterLo))
+}
+
+func (f *FAT32Filesystem) resolvePath(path string, isLast bool) (*DirEnt, *PosixError) {
+	trust.Debugf("resolve path %s, %v", path, isLast)
+	path = filepath.Clean(path)
+	dirPath, file := filepath.Split(path)
+	var dir *Dir
+	var err *PosixError
+	var entry *DirEnt
+
+	if dirPath == "/" {
+		dir, err = f.openRootDir()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		entry, err = f.resolvePath(dirPath, false)
+		if err != nil {
+			return nil, err
+		}
+		dir, err = f.openDirFromEntry(entry)
+		if err != nil {
+			return nil, err
+		}
+	}
+	file = strings.ToUpper(file)
+	for _, e := range dir.contents {
+		entryName := strings.ToUpper(e.Name)
+		if entryName == file {
+			if !isLast && !e.IsDir {
+				return nil, ENoEnt
+			}
+			return &e, nil
+		}
+	}
+	return nil, ENoEnt
 }
 
 func (f *FAT32Filesystem) readDirFromSector(path string, sector uint32) (*Dir, *PosixError) {
