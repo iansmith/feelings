@@ -36,7 +36,7 @@ SECTIONS
         _ebss = .;
     }
 
-    . = 0x96000;
+    . = 0x110000;
    .exc  ALIGN(0x1000): {
         KEEP(*(.exc_vector))
      }

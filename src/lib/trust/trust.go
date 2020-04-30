@@ -13,10 +13,11 @@ const (
 	WarnMask  MaskLevel = 0x2
 	InfoMask  MaskLevel = 0x4
 	DebugMask MaskLevel = 0x8
+	StatsMask MaskLevel = 0x10
 	fatalMask MaskLevel = 0x80
 )
 
-var level = fatalMask | ErrorMask | WarnMask | InfoMask | DebugMask
+var level = fatalMask | StatsMask | ErrorMask | WarnMask | InfoMask | DebugMask
 
 // SetLevel lets you set an error mask directly. You can pass in something like
 // ErrorMask | DebugMask to control exactly what gets printed.  It returns the
@@ -38,8 +39,11 @@ func SetLevel(mask MaskLevel) MaskLevel {
 		fallthrough
 	case mask&DebugMask > 0:
 		result |= DebugMask
+		fallthrough
+	case mask&StatsMask > 0:
+		result |= StatsMask
 	}
-	r := level & 0xf
+	r := level & 0x1f
 	level = result | fatalMask
 	return r
 }
@@ -60,7 +64,10 @@ func LevelToString() string {
 		result += "info "
 		fallthrough
 	case level&DebugMask > 0:
-		result += "debug"
+		result += "debug "
+		fallthrough
+	case level&StatsMask > 0:
+		result += "stats"
 	}
 	return result
 }
@@ -69,17 +76,31 @@ func logf(l MaskLevel, format string, params ...interface{}) {
 	if level&l == 0 {
 		return
 	}
+	start := 0
 	switch {
 	case l&ErrorMask > 0:
 		fmt.Printf("ERROR:")
-	case level&WarnMask > 0:
+	case l&WarnMask > 0:
 		fmt.Printf(" WARN:")
-	case level&InfoMask > 0:
+	case l&InfoMask > 0:
 		fmt.Printf(" INFO:")
-	case level&DebugMask > 0:
+	case l&DebugMask > 0:
 		fmt.Printf("DEBUG:")
+	case l&StatsMask > 0:
+		s, ok := params[0].(string)
+		if !ok {
+			s = "unknown"
+		}
+		fmt.Printf("len of params %d", len(params))
+		fmt.Printf("STATS[%s]:", s)
+		start = 1
 	}
-	fmt.Printf(format, params...)
+	if len(format) == 0 {
+		format = "\n"
+	} else if format[len(format)-1] != '\n' {
+		format += "\n"
+	}
+	fmt.Printf(format, params[start:]...)
 }
 
 //Fatalf prints the given log message (format + params) on stdout and then
@@ -107,4 +128,11 @@ func Infof(format string, params ...interface{}) {
 //Debugf prints the given log message (format + params) using the DebugMask level.
 func Debugf(format string, params ...interface{}) {
 	logf(DebugMask, format, params...)
+}
+
+//Stats prints the given log message (format + params) using the StatsMask level and
+//takes an extra parameter that will be visible in the log message as the category
+//of stats that is reported.
+func Statsf(category string, format string, params ...interface{}) {
+	logf(StatsMask, format, append([]interface{}{category}, params...)...)
 }

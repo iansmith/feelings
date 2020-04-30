@@ -3,6 +3,8 @@ package main
 import (
 	"feelings/src/golang/bytes"
 	"feelings/src/golang/encoding/binary"
+	"feelings/src/golang/io"
+	"feelings/src/golang/path/filepath"
 	"feelings/src/golang/unicode/utf16"
 	"feelings/src/lib/trust"
 )
@@ -55,7 +57,7 @@ type rawFat32LFN struct {
 	name2           [2]uint16
 }
 
-type fatDir struct {
+type rawDirEnt struct {
 	name           [8]uint8
 	ext            [3]uint8
 	Attrib         byte
@@ -207,7 +209,7 @@ func (s *sdCardInfo) clusterNumberToSector(clusterNumber uint32) uint32 {
 	return ((clusterNumber - 2) * s.activePartition.sectorsPerCluster) + s.activePartition.fatOrigin + s.activePartition.fatSize
 }
 
-func (f *fatDir) unpack(buffer []uint8) bool {
+func (f *rawDirEnt) unpack(buffer []uint8) bool {
 	buf := bytes.NewBuffer(buffer)
 	//rt.MiniUART.Dump(unsafe.Pointer(&buf.Bytes()[0]))
 
@@ -345,4 +347,117 @@ func unpackPartitionBuffer(buffer []byte, initialPadding int, start int, end int
 		return err
 	}
 	return nil
+}
+
+type FAT32Filesystem struct {
+	tranq     bufferManager
+	sdcard    *sdCardInfo
+	inodeMap  map[string]uint64
+	nextInode uint64
+}
+
+func NewFAT32Filesystem(tranq *Tranquil, sdcard *sdCardInfo) *FAT32Filesystem {
+	return &FAT32Filesystem{
+		tranq:     tranq,
+		sdcard:    sdcard,
+		inodeMap:  make(map[string]uint64),
+		nextInode: 1,
+	}
+}
+func (f *FAT32Filesystem) NewInode() uint64 {
+	result := f.nextInode
+	f.nextInode++
+	return result
+}
+
+// ReadDir returns a list of dirents into the already allocated structure given by
+// it's parameter.   Path should already have been cleaned.
+func (f *FAT32Filesystem) ReadDir(path string, entries []*DirEnt) *PosixError {
+	panic("not implemented")
+}
+
+// OpenDir returns a directory pointer that you can then call ReadDir on, or it returns null.
+func (f *FAT32Filesystem) OpenDir(path string) (*Dir, *PosixError) {
+	path = filepath.Clean(path)
+	if path == "/" {
+		return f.readDirFromSector(path, f.sdcard.activePartition.rootCluster)
+	}
+	panic("not implemented")
+}
+
+func (f *FAT32Filesystem) readDirFromSector(path string, sector uint32) (*Dir, *PosixError) {
+	entries := 0
+	buf := make([]byte, directoryEntrySize)
+	lfnSeq := ""
+	var err error
+	var r int
+	lfnSeqCurr := 0 //lfn's numbered from 1
+	var raw rawDirEnt
+	fr := newFATDataReader(sector, f.sdcard, f.tranq) //get root directory
+	result := NewDir(f, path, sector, 32)
+outer:
+	for {
+		curr := 0
+		for curr < directoryEntrySize {
+			//fmt.Printf("reading entry %d, byte %d\n", entries, curr)
+			r, err = fr.Read(buf[curr : directoryEntrySize-curr])
+			if err == io.EOF {
+				break outer
+			}
+			if err != nil {
+				trust.Errorf("unknown error caught: %v", err.Error())
+				break outer
+			}
+			curr += r
+		}
+		if ok := raw.unpack(buf); !ok {
+			trust.Errorf("unable to unpack directory: %v ", err.Error())
+			break outer
+		}
+		entries++
+		switch {
+		case raw.name[0] == directoryEnd:
+			f.tranq.DumpStats(false)
+			break outer
+		case raw.name[0] == directoryEntryDeleted:
+			continue
+		case raw.Attrib == directoryEntryLFN:
+			lfn := longFilename(buf[0:directoryEntrySize])
+			if lfn == nil {
+				trust.Errorf("unable to understand long file name in directory")
+				continue
+			}
+			if int(lfn.sequenceNumber) > lfnSeqCurr {
+				lfnSeq = lfnSeq + lfn.segment
+			} else {
+				lfnSeq = lfn.segment + lfnSeq
+			}
+			lfnSeqCurr = int(lfn.sequenceNumber)
+		default:
+			nameLen := strlenWithTerminator(raw.name[:], ' ')
+			extLen := strlenWithTerminator(raw.ext[:], ' ')
+			shortName := string(raw.name[:nameLen])
+			if extLen > 0 {
+				shortName += "." + string(raw.ext[:extLen])
+			}
+			if len(shortName) == 0 {
+				trust.Warnf("found a short name for a file that is empty!")
+			}
+			//fmt.Printf("\t (%s, %s)\n", lfnSeq, shortName)
+			longName := shortName
+			if lfnSeqCurr > 0 {
+				longName = lfnSeq
+			}
+			lfnSeq = ""
+			lfnSeqCurr = 0 // lfn's seqence numbers start at 1
+			result.addEntry(longName, &raw)
+		}
+	}
+	if err == io.EOF {
+		trust.Warnf("finished reading all the directory entries, but shouldn't we have gotten a directory end entry?")
+	}
+	if err != nil {
+		return nil, EUnknown
+	}
+	return result, nil
 }

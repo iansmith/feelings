@@ -16,7 +16,7 @@ set -o pipefail
 PROPOSED_GOROOT=/Users/iansmith/.enable/go1.14.1.src
 # PROPOSED_PACKAGES should NOT include unsafe, because it's really implemented by the compiler
 PROPOSED_PACKAGES=( \
-io errors fmt bytes errors unicode/utf16 math/rand encoding/binary bytes \
+io errors fmt bytes errors unicode/utf16 math/rand encoding/binary bytes path/filepath time strings\
 )
 
 function testPackage () {

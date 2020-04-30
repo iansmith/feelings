@@ -55,6 +55,7 @@ var sectorCache uint64
 
 type bufferManager interface {
 	PossiblyLoad(page uint32) (unsafe.Pointer, error) //loads if page is not in an existing buffer
+	DumpStats(clear bool)                             //pass true if you wants stats cleared as well
 }
 
 type Tranquil struct {
@@ -157,4 +158,16 @@ func (t *Tranquil) PossiblyLoad(sector uint32) (unsafe.Pointer, error) {
 		return nil, err
 	}
 	return ptr, nil
+}
+
+func (t *Tranquil) DumpStats(clear bool) {
+	trust.Statsf("pageCache", "cache hits: %d, cache misses %d, cache hit %2.0f%%, ousters %d\n",
+		t.cacheHits, t.cacheMisses,
+		(float64(t.cacheHits)/(float64(t.cacheHits)+float64(t.cacheMisses)))*100.0,
+		t.cacheOusters)
+	if clear {
+		t.cacheHits = 0
+		t.cacheMisses = 0
+		t.cacheOusters = 0
+	}
 }
