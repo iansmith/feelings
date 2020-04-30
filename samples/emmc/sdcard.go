@@ -1,9 +1,11 @@
 package main
 
 import (
-	"errors"
+	"feelings/src/golang/errors"
 	"feelings/src/hardware/bcm2835"
+	"feelings/src/lib/trust"
 	rt "feelings/src/tinygo_runtime"
+
 	"unsafe"
 
 	"github.com/tinygo-org/tinygo/src/device/arm"
@@ -48,7 +50,7 @@ type sdCardInfo struct {
 
 func sdWaitForInterrupt(mask uint32) int {
 	var r int
-	var m = uint32(mask | bcm2835.InterruptErrorMask)
+	var m = mask | bcm2835.InterruptErrorMask
 	cnt := 1000000
 	for (bcm2835.EMCC.Interrupt.Get()&m == 0) && cnt > 0 {
 		rt.WaitMuSec(1)
@@ -83,40 +85,34 @@ func sdStatus(mask uint32) int {
 }
 
 func sdSendCommand(code uint32, arg uint32) int {
-	r := int(0)
-	sd_err = bcm2835.SDOk
+	r := 0
+	sdErr = bcm2835.SDOk
 
 	//do we need to force the command app command first?
 	if code&bcm2835.CommandNeedApp > 0 {
 		rca := 0
-		if sd_rca > 0 {
+		if sdRca > 0 {
 			rca = bcm2835.CommandResponse48
 		}
-		r = sdSendCommand(bcm2835.CommandAppCommand|uint32(rca), uint32(sd_rca))
+		r = sdSendCommand(bcm2835.CommandAppCommand|uint32(rca), uint32(sdRca))
 
-		if sd_rca > 0 && r == 0 {
-			rt.MiniUART.WriteString("ERROR: failed to send SD APP command\n")
-			sd_err = bcm2835.SDErrorUnsigned //uint64(int64(bcm2835.SDError))
+		if sdRca > 0 && r == 0 {
+			trust.Errorf("failed to send SD APP command\n")
+			sdErr = bcm2835.SDErrorUnsigned //uint64(int64(bcm2835.SDError))
 			return 0
 		}
 		code = code & (^uint32(bcm2835.CommandNeedApp))
 	}
 
 	if sdStatus(bcm2835.SRCommandInhibit) > 0 {
-		rt.MiniUART.WriteString("ERROR: EMMC Busy\n")
-		sd_err = bcm2835.SDTimeoutUnsigned //uint64(int64(bcm2835.SDTimeout))
+		trust.Errorf("ERROR: EMMC Busy\n")
+		sdErr = bcm2835.SDTimeoutUnsigned //uint64(int64(bcm2835.SDTimeout))
 		return 0
 	}
 	if showCommands {
-		rt.MiniUART.WriteString("sending command ")
-		rt.MiniUART.Hex32string(code)
-		rt.MiniUART.WriteString(" arg ")
-		rt.MiniUART.Hex32string(arg)
-		rt.MiniUART.WriteString("\n")
+		trust.Debugf("sending command %x arg %x\n",
+			code, arg)
 	}
-
-	//if(sd_status(SR_CMD_INHIBIT)) { uart_puts("ERROR: EMMC busy\n"); sd_err= SD_TIMEOUT;return 0;}
-	//uart_puts("EMMC: Sending command ");uart_hex(code);uart_puts(" arg ");uart_hex(arg);uart_puts("\n");
 
 	bcm2835.EMCC.Interrupt.Set(bcm2835.EMCC.Interrupt.Get()) //???
 	bcm2835.EMCC.Arg1.Set(arg)
@@ -130,8 +126,8 @@ func sdSendCommand(code uint32, arg uint32) int {
 
 	r = sdWaitForInterrupt(bcm2835.InterruptCommandDone)
 	if r != 0 {
-		rt.MiniUART.WriteString("failed to send EMCC command\n")
-		sd_err = uint64(r)
+		trust.Errorf("failed to send EMCC command\n")
+		sdErr = uint64(r)
 		return 0
 	}
 
@@ -153,9 +149,9 @@ func sdSendCommand(code uint32, arg uint32) int {
 		r = r | int(bcm2835.EMCC.Response1.Get())
 		return r
 	} else if code == bcm2835.CommandSendRelAddr {
-		right := int((r & 0x1fff) | ((r & 0x2000) << 6))
-		left := int(((r & 0x4000) << 8) | ((r & 0x8000) << 8))
-		sd_err = uint64((left | right) & bcm2835.CommandErrorsMask)
+		right := (r & 0x1fff) | ((r & 0x2000) << 6)
+		left := ((r & 0x4000) << 8) | ((r & 0x8000) << 8)
+		sdErr = uint64((left | right) & bcm2835.CommandErrorsMask)
 		return r & bcm2835.CommandRCAMask
 	}
 	return r & bcm2835.CommandErrorsMask
@@ -165,25 +161,25 @@ func sdInit() error {
 	var r, ccs, cnt int
 	r = int(bcm2835.GPIO.FuncSelect[4].Get())
 
-	comp := ^(int(7) << int((7 * 3)))
+	comp := ^(7 << (7 * 3))
 	r = r & comp //clearing the pin seven entries?
 	bcm2835.GPIO.FuncSelect[4].Set(uint32(r))
 	waitOnPullUps(1 << 15)
 
 	// GPIO_CLK
 	r = int(bcm2835.GPIO.FuncSelect[4].Get())
-	r = r | ((int(7) << (8 * 3)) | (int(7 << (9 * 3))))
+	r = r | ((7 << (8 * 3)) | (7 << (9 * 3)))
 	bcm2835.GPIO.FuncSelect[4].Set(uint32(r))
 	waitOnPullUps((1 << 16) | (1 << 17))
 
 	r = int(bcm2835.GPIO.FuncSelect[5].Get())
-	r = r | ((int(7 << (0 * 3))) | (int(7 << (1 * 3))) | (int(7 << (2 * 3))) | (int(7 << (3 * 3))))
+	r = r | ((7 << (0 * 3)) | (7 << (1 * 3)) | (7 << (2 * 3)) | (7 << (3 * 3)))
 	bcm2835.GPIO.FuncSelect[5].Set(uint32(r))
 	waitOnPullUps((1 << 18) | (1 << 19) | (1 << 20) | (1 << 21))
 
 	sdHardwareVersion := (bcm2835.EMCC.SlotInterruptStatus.Get() & bcm2835.HostSpecNum) >> bcm2835.HostSpecNumShift
 
-	rt.MiniUART.WriteString("EMMC: GPIO set up\n")
+	trust.Infof("EMMC: GPIO set up\n")
 
 	// Reset the card.
 	bcm2835.EMCC.Control0.Set(0)
@@ -196,7 +192,7 @@ func sdInit() error {
 	}
 
 	if cnt <= 0 {
-		rt.MiniUART.WriteString("Failed to reset EMCC\n")
+		trust.Errorf("Failed to reset EMCC\n")
 		return bcm2835.NewSDInitFailure("Unable to reset EMCC")
 	}
 
@@ -210,18 +206,18 @@ func sdInit() error {
 	}
 	bcm2835.EMCC.InterruptEnable.Set(0xffffffff)
 	bcm2835.EMCC.InterruptMask.Set(0xffffffff)
-	sd_scr[0] = 0
-	sd_scr[1] = 0
-	sd_rca = 0
-	sd_err = 0
+	sdScr[0] = 0
+	sdScr[1] = 0
+	sdRca = 0
+	sdErr = 0
 
 	sdSendCommand(bcm2835.CommandGoIdle, 0)
-	if sd_err != 0 {
+	if sdErr != 0 {
 		return bcm2835.NewSDInitFailure("unable to get card to go idle")
 	}
 
 	sdSendCommand(bcm2835.CommandSendIfCond, 0x000001AA)
-	if sd_err != 0 {
+	if sdErr != 0 {
 		return bcm2835.NewSDInitFailure("unable to send command if cond")
 	}
 
@@ -231,18 +227,17 @@ func sdInit() error {
 		cnt--
 		waitCycles(400)
 		r = sdSendCommand(bcm2835.CommandSendOpCond, bcm2835.ACMD41_ARG_HC)
-		rt.MiniUART.WriteString("EMMC: CMD_SEND_OP_COND returned ")
+		trust.Infof("EMMC: CMD_SEND_OP_COND returned ")
 		if r&bcm2835.ACMD41_CMD_COMPLETE > 0 {
-			rt.MiniUART.WriteString("COMPLETE ")
+			trust.Infof("---> COMPLETE ")
 		}
 		if r&bcm2835.ACMD41_VOLTAGE > 0 {
-			rt.MiniUART.WriteString("VOLTAGE ")
+			trust.Infof("---> VOLTAGE ")
 		}
 		if r&bcm2835.ACMD41_CMD_CCS > 0 {
-			rt.MiniUART.WriteString("CSS ")
+			trust.Infof("---> CSS ")
 		}
-		rt.MiniUART.WriteCR()
-		if sd_err != bcm2835.SDTimeoutUnsigned && sd_err != bcm2835.SDOk {
+		if sdErr != bcm2835.SDTimeoutUnsigned && sdErr != bcm2835.SDOk {
 			return bcm2835.NewSDInitFailure("EMMC ACMD41 returned error ")
 		}
 	}
@@ -257,8 +252,8 @@ func sdInit() error {
 	}
 
 	sdSendCommand(bcm2835.CommandAllSendCID, 0)
-	sd_rca = uint64(sdSendCommand(bcm2835.CommandSendRelAddr, 0))
-	if sd_err != 0 {
+	sdRca = uint64(sdSendCommand(bcm2835.CommandSendRelAddr, 0))
+	if sdErr != 0 {
 		return bcm2835.NewSDInitFailure("Command Send Relative Addr Failed")
 	}
 
@@ -266,8 +261,8 @@ func sdInit() error {
 		return bcm2835.NewSDInitFailure("Could not set clock speed to 25000000")
 	}
 
-	sdSendCommand(bcm2835.CommandCardSelect, uint32(sd_rca))
-	if sd_err != 0 {
+	sdSendCommand(bcm2835.CommandCardSelect, uint32(sdRca))
+	if sdErr != 0 {
 		return bcm2835.NewSDInitFailure("Could not set select SD card")
 	}
 
@@ -278,7 +273,7 @@ func sdInit() error {
 	bcm2835.EMCC.BlockSizAndCount.Set((1 << 16) | 8)
 
 	sdSendCommand(bcm2835.CommandSendSCR, 0)
-	if sd_err != 0 {
+	if sdErr != 0 {
 		return bcm2835.NewSDInitFailure("Unable to use SendSCR command")
 	}
 
@@ -290,7 +285,7 @@ func sdInit() error {
 	cnt = 100000
 	for r < 2 && cnt > 0 {
 		if bcm2835.EMCC.Status.Get()&bcm2835.SRReadAvailable != 0 {
-			sd_scr[r] = uint64(bcm2835.EMCC.Data.Get())
+			sdScr[r] = uint64(bcm2835.EMCC.Data.Get())
 			r++
 		} else {
 			rt.WaitMuSec(1)
@@ -300,9 +295,9 @@ func sdInit() error {
 	if r != 2 {
 		return bcm2835.NewSDInitFailure("unable to retreive data for scr register")
 	}
-	if sd_scr[0]&bcm2835.SCR_SD_BUS_WIDTH_4 != 0 {
-		sdSendCommand(bcm2835.CommandSetBusWidth, uint32(sd_rca)|2)
-		if sd_err != 0 {
+	if sdScr[0]&bcm2835.SCR_SD_BUS_WIDTH_4 != 0 {
+		sdSendCommand(bcm2835.CommandSetBusWidth, uint32(sdRca)|2)
+		if sdErr != 0 {
 			return bcm2835.NewSDInitFailure("Unable to set bus width")
 		}
 		r = int(bcm2835.EMCC.Control0.Get())
@@ -311,19 +306,18 @@ func sdInit() error {
 	}
 
 	// add software flag
-	rt.MiniUART.WriteString("EMMC: supports ")
-	if sd_scr[0]&bcm2835.SCR_SUPP_SET_BLKCNT != 0 {
-		rt.MiniUART.WriteString("SET_BLKCNT ")
+	trust.Infof("EMMC: supports ")
+	if sdScr[0]&bcm2835.SCR_SUPP_SET_BLKCNT != 0 {
+		trust.Infof("---> SET_BLKCNT ")
 	}
 	if ccs != 0 {
-		rt.MiniUART.WriteString("CCS ")
+		trust.Infof("---> CCS ")
 	}
-	rt.MiniUART.WriteString("\n")
-	r = int(sd_scr[0])
+	r = int(sdScr[0])
 	comp = ^(bcm2835.SCR_SUPP_CCS)
 	r = r & comp
-	sd_scr[0] = uint64(r)
-	sd_scr[0] = sd_scr[0] | uint64(ccs)
+	sdScr[0] = uint64(r)
+	sdScr[0] = sdScr[0] | uint64(ccs)
 
 	return nil
 
@@ -340,7 +334,7 @@ func sdSetClockToFreq(f uint32, hwVersion uint32) error {
 		cnt--
 	}
 	if cnt <= 0 {
-		rt.MiniUART.WriteString("timeout waiting for inihibt flag\n")
+		trust.Infof("timeout waiting for inihibt flag\n")
 		return bcm2835.NewSDInitFailure("timeout waiting for inihibit flag\n")
 	}
 
@@ -392,16 +386,12 @@ func sdSetClockToFreq(f uint32, hwVersion uint32) error {
 		d = 2
 		s = 0
 	}
-	_ = rt.MiniUART.WriteString("sd clock divisor ")
-	rt.MiniUART.Hex32string(d)
-	_ = rt.MiniUART.WriteString("shift ")
-	rt.MiniUART.Hex32string(s)
-	_ = rt.MiniUART.WriteByte('\n')
+	trust.Infof("sd clock divisor 0x%x shift 0x%x", d, s)
 
 	if hwVersion > bcm2835.HostSpecV2 {
 		h = (d & 0x300) >> 2
 	}
-	d = (((d & 0x0ff) << 8) | h)
+	d = ((d & 0x0ff) << 8) | h
 
 	r := bcm2835.EMCC.Control1.Get()
 	r = (r & 0xffff003f) | d
@@ -465,23 +455,23 @@ func sdReadblockInto(lba uint32, num uint32, buf *uint32) int {
 	}
 	//infoMessage("--------> start reading n blocks, first block @: ", num, lba)
 	if sdStatus(bcm2835.SRDataInhibit) != 0 {
-		sd_err = bcm2835.SDTimeoutUnsigned
+		sdErr = bcm2835.SDTimeoutUnsigned
 		return 0
 	}
-	if sd_scr[0]&bcm2835.SCR_SUPP_CCS != 0 {
-		if num > 1 && (sd_scr[0]&bcm2835.SCR_SUPP_SET_BLKCNT != 0) {
+	if sdScr[0]&bcm2835.SCR_SUPP_CCS != 0 {
+		if num > 1 && (sdScr[0]&bcm2835.SCR_SUPP_SET_BLKCNT != 0) {
 			sdSendCommand(bcm2835.CommandSetBlockcount, num)
-			if sd_err != 0 {
+			if sdErr != 0 {
 				return 0
 			}
 		}
-		bcm2835.EMCC.BlockSizAndCount.Set(uint32((num << 16) | 512))
+		bcm2835.EMCC.BlockSizAndCount.Set((num << 16) | 512)
 		if num == 1 {
 			sdSendCommand(bcm2835.CommandReadSingle, lba)
 		} else {
 			sdSendCommand(bcm2835.CommandReadMulti, lba)
 		}
-		if sd_err != 0 {
+		if sdErr != 0 {
 			return 0
 		}
 	} else {
@@ -489,16 +479,16 @@ func sdReadblockInto(lba uint32, num uint32, buf *uint32) int {
 	}
 
 	for c < int(num) {
-		if sd_scr[0]&bcm2835.SCR_SUPP_CCS == 0 {
+		if sdScr[0]&bcm2835.SCR_SUPP_CCS == 0 {
 			sdSendCommand(bcm2835.CommandReadSingle, (lba+uint32(c))*sectorSize)
-			if sd_err != 0 {
+			if sdErr != 0 {
 				return 0
 			}
 		}
 		r = sdWaitForInterrupt(bcm2835.InterruptReadReady)
 		if r != 0 {
-			rt.MiniUART.WriteString("ERROR: Timeout waiting for ready to read\n")
-			sd_err = uint64(r)
+			trust.Errorf("Timeout waiting for ready to read\n")
+			sdErr = uint64(r)
 			return 0
 		}
 		for d = 0; d < sectorSize/4; d++ {
@@ -511,12 +501,12 @@ func sdReadblockInto(lba uint32, num uint32, buf *uint32) int {
 		//sector because it is pointing to a contiguous memory
 		//blob
 	}
-	if num > 1 && sd_scr[0]&bcm2835.SCR_SUPP_SET_BLKCNT == 0 && sd_scr[0]&bcm2835.SCR_SUPP_CCS != 0 {
+	if num > 1 && sdScr[0]&bcm2835.SCR_SUPP_SET_BLKCNT == 0 && sdScr[0]&bcm2835.SCR_SUPP_CCS != 0 {
 		sdSendCommand(bcm2835.CommandStopTrans, 0)
 	}
 	//did it blow up?
-	if sd_err != bcm2835.SDOk {
-		return int(sd_err)
+	if sdErr != bcm2835.SDOk {
+		return int(sdErr)
 	}
 	//did we read the right amt?
 	if c != int(num) {

@@ -2,17 +2,21 @@
 
 set -u
 set -o pipefail
+
 #
 # THIS SCRIPT SHOULD ONLY BE RUN FROM THE DIRECTORY CONTAINING IT
+#
 #
 
 ##
 ## KEY VARIABLES ARE THESE TWO
 ##
 
+# PROPOSED_GOROOT definitely works with 1.14.1, not sure if works with earlier/later versions
 PROPOSED_GOROOT=/Users/iansmith/.enable/go1.14.1.src
+# PROPOSED_PACKAGES should NOT include unsafe, because it's really implemented by the compiler
 PROPOSED_PACKAGES=( \
-io errors unsafe fmt bytes errors unicode/utf16 math/rand encoding/binary bytes \
+io errors fmt bytes errors unicode/utf16 math/rand encoding/binary bytes \
 )
 
 function testPackage () {

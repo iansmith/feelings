@@ -3,6 +3,7 @@ package main
 import (
 	"feelings/src/golang/bytes"
 	"feelings/src/golang/encoding/binary"
+	"feelings/src/lib/trust"
 )
 
 type biosParamBlock struct {
@@ -58,7 +59,7 @@ func (b *biosParamBlockShared) unpack(buffer []uint8) bool {
 
 	err := binary.Read(buf, binary.LittleEndian, b)
 	if err != nil {
-		errorMessage("failed to read binary data for bios param block: " + err.Error())
+		trust.Errorf("failed to read binary data for bios param block: %v ", err.Error())
 		return false
 	}
 	copy(b.jump[0:3], buffer[0:3])
@@ -71,7 +72,7 @@ func (b *biosParamBlockFat32Extension) unpack(buffer []uint8) bool {
 
 	err := binary.Read(buf, binary.LittleEndian, b)
 	if err != nil {
-		errorMessage("failed to read binary data for bios param block fat 16 extension: " + err.Error())
+		trust.Errorf("failed to read binary data for bios param block fat 16 extension: %v", err.Error())
 		return false
 	}
 	copy(b.volumeLabel[0:11], buffer[0x23:0x23+11])
@@ -84,7 +85,7 @@ func (b *biosParamBlockFat16Extension) unpack(buffer []uint8) bool {
 
 	err := binary.Read(buf, binary.LittleEndian, b)
 	if err != nil {
-		errorMessage("failed to read binary data for bios param block fat 16 extension: " + err.Error())
+		trust.Errorf("failed to read binary data for bios param block fat 16 extension: %v ", err.Error())
 		return false
 	}
 	copy(b.volumeLabel[0:11], buffer[0x7:0x7+11])

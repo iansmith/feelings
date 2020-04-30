@@ -1,9 +1,10 @@
 package main
 
 import (
-	"errors"
+	"feelings/src/golang/errors"
+	"feelings/src/golang/io"
 	"feelings/src/hardware/bcm2835"
-	"io"
+	"feelings/src/lib/trust"
 	"unsafe"
 )
 
@@ -62,6 +63,10 @@ func (f *fatDataReader) Read(p []byte) (int, error) {
 		result = int(remaining)
 	}
 	if f.current == sectorSize {
+		if f.endOfClusterChain() { //this is the EOF cause by no more data
+			atEOF = true
+			goto returnError
+		}
 		//deal with the case where we need another page
 		ok := f.getMoreData()
 		if ok != bcm2835.SDOk {
@@ -91,7 +96,7 @@ func (f *fatDataReader) endOfClusterChain() bool {
 func (f *fatDataReader) getNextClusterInChain() (uint32, int) {
 
 	if f.endOfClusterChain() {
-		errorMessage("should not be calling getNextClusterInChain when already at end of chain")
+		trust.Errorf("should not be calling getNextClusterInChain when already at end of chain")
 		return f.cluster, bcm2835.SDOk
 	}
 	var next uint32
@@ -104,16 +109,16 @@ func (f *fatDataReader) getNextClusterInChain() (uint32, int) {
 	sectorOfFAT := distance >> 9 // divide by sectorSize
 	ptr, err := f.tranquil.PossiblyLoad(f.sdcard.activePartition.fatOrigin + uint32(sectorOfFAT))
 	if err != nil {
-		errorMessage("error reading fat sector " + err.Error())
+		trust.Errorf("error reading fat sector " + err.Error())
 		return 0, bcm2835.SDError
 	}
 	offset := distance % sectorSize
 
 	if f.sdcard.activePartition.isFat16 {
-		base := (*uint16)(unsafe.Pointer(uintptr(ptr) + uintptr(offset))) // <<1 is because 2 bytes per
+		base := (*uint16)(unsafe.Pointer(uintptr(ptr) + offset)) // <<1 is because 2 bytes per
 		next = uint32(*base)
 	} else {
-		base := (*uint32)(unsafe.Pointer(uintptr(ptr) + uintptr(offset))) // <<2 is because 4 bytes per
+		base := (*uint32)(unsafe.Pointer(uintptr(ptr) + offset)) // <<2 is because 4 bytes per
 		next = *base
 	}
 	f.cluster = next
@@ -143,7 +148,7 @@ func (f *fatDataReader) getMoreData() int {
 		var err error
 		f.sectorData, err = f.tranquil.PossiblyLoad(f.sdcard.clusterNumberToSector(f.cluster))
 		if err != nil {
-			errorMessage("unable to read data sector: " + err.Error())
+			trust.Errorf("unable to read data sector: %v", err.Error())
 			return bcm2835.SDError
 		}
 	}
@@ -162,11 +167,11 @@ const fat32BadSector = uint32(0xFFFFFFF7)
 func warnFAT32ChainValue(v uint32) {
 	switch v {
 	case fat32Unusual0, fat32Unusual1, fat32Unusual2, fat32Unusual3, fat32Unusual4, fat32Unusual5:
-		warnMessage("Unusual value found in FAT32 chain, assuming end-of-cluster: ", v)
+		trust.Warnf("Unusual value found in FAT32 chain, assuming end-of-cluster: %d ", v)
 	case fat32formatFiller:
-		warnMessage("Found format filler in the FAT32 chain, assuming end-of-cluster: ", v)
+		trust.Warnf("Found format filler in the FAT32 chain, assuming end-of-cluster: 0x%x", v)
 	case fat32BadSector:
-		warnMessage("Ignoring bad sector value in FAT32 chain, assuming end-of-cluster: ", v)
+		trust.Warnf("Ignoring bad sector value in FAT32 chain, assuming end-of-cluster: ", v)
 	}
 }
 
@@ -182,11 +187,11 @@ const fat16BadSector = uint32(0xFFF7)
 func warnFAT16ChainValue(v uint32) {
 	switch v {
 	case fat16Unusual0, fat16Unusual1, fat16Unusual2, fat16Unusual3, fat16Unusual4, fat16Unusual5:
-		warnMessage("Unusual value found in FAT16 chain, assuming end-of-cluster: ", v)
+		trust.Warnf("Unusual value found in FAT16 chain, assuming end-of-cluster: ", v)
 	case fat16formatFiller:
-		warnMessage("Found format filler in the FAT16 chain, assuming end-of-cluster: ", v)
+		trust.Warnf("Found format filler in the FAT16 chain, assuming end-of-cluster: ", v)
 	case fat16BadSector:
-		warnMessage("Ignoring bad sector value in FAT16 chain, assuming end-of-cluster: ", v)
+		trust.Warnf("Ignoring bad sector value in FAT16 chain, assuming end-of-cluster: ", v)
 	}
 }
 

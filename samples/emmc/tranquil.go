@@ -1,7 +1,9 @@
 package main
 
 import (
-	"math/rand"
+	"feelings/src/golang/math/rand"
+	"feelings/src/lib/trust"
+
 	"unsafe"
 )
 
@@ -12,7 +14,6 @@ type BitSet struct {
 
 const failLimit = 3
 const pageUnit = 512
-const bitSetUnit = 64
 
 //bitsets have to be multiples of 64.  the ptr provided should be
 //already allocated statically to be the place to store the data.
@@ -20,7 +21,7 @@ const bitSetUnit = 64
 func NewBitSet(size uint32, ptr unsafe.Pointer) *BitSet {
 	mask := ^(uint32(0x3f))
 	if size&mask != size {
-		errorMessage("your bitset size is not a multiple of 64", size)
+		trust.Errorf("your bitset size is not a multiple of 64: %d", size)
 		return nil
 	}
 	result := &BitSet{
@@ -75,10 +76,6 @@ type saver func(uint32, unsafe.Pointer /*watch alignment!*/) error
 // 1page=512bytes is the 2nd param
 func NewTraquilBufferManager(ptr unsafe.Pointer, sizeInPages uint32, bitSetData unsafe.Pointer,
 	ld loader, sv saver) *Tranquil {
-	if sizeInPages&0x1ff != sizeInPages {
-		errorMessage("number of pages provided is not a multiple of 512: ", sizeInPages)
-		return nil
-	}
 	result := &Tranquil{
 		sizeInPages: sizeInPages,
 		data:        ptr,
@@ -110,11 +107,12 @@ func (t *Tranquil) PossiblyLoad(sector uint32) (unsafe.Pointer, error) {
 	haveWinner := false
 	winner := uint32(0)
 	for fails < failLimit {
+		fails++
 		r := uint32(rand.Intn(int(t.sizeInPages)))
 		if t.inUse.On(r) {
 			continue
 		}
-		winner = uint32(r)
+		winner = r
 		haveWinner = true
 		break
 	}
@@ -155,7 +153,7 @@ func (t *Tranquil) PossiblyLoad(sector uint32) (unsafe.Pointer, error) {
 	//store the mapping
 	t.pageMap[sector] = bufferEntry{ptr, winner}
 	if err := t.loader(sector, ptr); err != nil {
-		errorMessage("buffer management failed to load page ", sector)
+		trust.Errorf("buffer management failed to load page: %x", sector)
 		return nil, err
 	}
 	return ptr, nil
