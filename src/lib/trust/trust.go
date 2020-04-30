@@ -91,7 +91,6 @@ func logf(l MaskLevel, format string, params ...interface{}) {
 		if !ok {
 			s = "unknown"
 		}
-		fmt.Printf("len of params %d", len(params))
 		fmt.Printf("STATS[%s]:", s)
 		start = 1
 	}
