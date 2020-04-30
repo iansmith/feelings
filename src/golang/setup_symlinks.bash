@@ -68,12 +68,15 @@ function makeSymlink() {
     ## remove intervening directories, if needed
     dir=${pkg}
     while [[ `dirname ${dir}` != "." ]]; do
-      rmdir `dirname ${dir}`
+      rmdir `dirname ${dir}` >& /dev/null
       if [[ ! $? -eq 0 ]]; then
-        echo ignoring local directory `dirname ${dir}`
+        #echo ignoring local directory `dirname ${dir}`
+        true
       fi
       dir=`dirname $dir`
     done
+
+    # make new directory, if needed
     dir=${pkg}
     if [[ `dirname ${dir}` != "." ]]; then
       mkdir -p `dirname ${dir}`
