@@ -189,3 +189,25 @@ func warnFAT16ChainValue(v uint32) {
 		warnMessage("Ignoring bad sector value in FAT16 chain, assuming end-of-cluster: ", v)
 	}
 }
+
+//func open(fullyQualifiedRaw string) (*os.File, error) {
+//	path := filepath.Clean(fullyQualifiedRaw)
+//	path = strings.TrimSpace(path)
+//	if path[0] != os.PathSeparator {
+//		return nil, errors.New("only handles fully qualified path:" + fullyQualifiedRaw)
+//	}
+//	remainder := path[1:]
+//	left := ""
+//	for remainder != "" {
+//		pieces := strings.SplitN(current, string(os.PathSeparator), 2)
+//		if len(pieces) == 1 {
+//			left = pieces[0]
+//			remainder = ""
+//		} else {
+//			left = pieces[0]
+//			remainder = pieces[1]
+//		}
+//
+//	}
+//
+//}

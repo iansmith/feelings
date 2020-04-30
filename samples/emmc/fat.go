@@ -38,6 +38,7 @@ const directoryEntryLFN = 0xF
 const attributeSubdirectory = 0x10
 const lowercaseName = 0x10
 const lowercaseExt = 0x8
+const sectorSize = 0x200
 
 //var partitionlba = uint32(0)
 
