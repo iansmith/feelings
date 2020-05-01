@@ -389,7 +389,6 @@ func (f *FAT32Filesystem) Open(path string) (io.Reader, *PosixError) {
 	if err != nil {
 		return nil, err
 	}
-	trust.Infof("resolved %s: %+v", entry.Name, entry)
 	reader := newFATDataReader(uint32(entry.firstClusterHi)*256+uint32(entry.firstClusterLo),
 		f.sdcard.activePartition, f.tranq, entry.Size)
 	if reader == nil {
@@ -406,7 +405,6 @@ func (f *FAT32Filesystem) openDirFromEntry(entry *DirEnt) (*Dir, *PosixError) {
 }
 
 func (f *FAT32Filesystem) resolvePath(path string, isLast bool) (*DirEnt, *PosixError) {
-	trust.Debugf("resolve path %s, %v", path, isLast)
 	path = filepath.Clean(path)
 	dirPath, file := filepath.Split(path)
 	var dir *Dir

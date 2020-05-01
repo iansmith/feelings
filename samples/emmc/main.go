@@ -34,7 +34,7 @@ func main() {
 			tranq := NewTraquilBufferManager(unsafe.Pointer(&sectorCache[0]), 0x40,
 				unsafe.Pointer(&sectorBitSet[0]), sdcard.readInto, nil)
 			fs := NewFAT32Filesystem(tranq, sdcard)
-			rd, err := fs.Open("/etc/init.d/procps")
+			rd, err := fs.Open("/readme")
 			if err != nil {
 				trust.Errorf("unable to open path: %s", err.Error())
 			}

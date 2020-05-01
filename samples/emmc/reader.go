@@ -60,7 +60,6 @@ func (f *fatDataReader) Read(p []byte) (int, error) {
 	//large a directory is (size==0)
 	if f.size > 0 && l < sectorSize && l > int(f.size-f.totalConsumed) {
 		l = int(f.size - f.totalConsumed) //clip it to the amount remaining w.r.t. size
-		trust.Infof("last page, clipped to %d b/c %d-%d", l, f.size, f.totalConsumed)
 	}
 	//wants less than what is available on this page
 	if f.current+uint32(l) < sectorSize {
