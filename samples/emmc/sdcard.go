@@ -31,21 +31,22 @@ type partitionInfo struct {
 	SectorsTotal   uint32 // size of this partition in sectors
 }
 
+type fatPartition struct {
+	rootCluster         uint32 // Active partition rootCluster
+	sectorsPerCluster   uint32 // Active partition sectors per cluster
+	bytesPerSector      uint32 // Active partition bytes per sector
+	fatOrigin           uint32 // The beginning of the 1 or more FATs (sector number)
+	fatSize             uint32 // fat size in sectors, including all FATs
+	dataSectors         uint32 // Active partition data sectors
+	unusedSectors       uint32 // Active partition unused sectors (this is also the offset of the partition)
+	reservedSectorCount uint32 // Active partition reserved sectors
+	isFAT16             bool
+}
+
 // this is the either the whole disk or the 1st partition
 type sdCardInfo struct {
 	// xxx add details about the card itself
-	activePartition struct {
-		rootCluster         uint32 // Active partition rootCluster
-		sectorsPerCluster   uint32 // Active partition sectors per cluster
-		bytesPerSector      uint32 // Active partition bytes per sector
-		fatOrigin           uint32 // The beginning of the 1 or more FATs (sector number)
-		fatSize             uint32 // fat size in sectors, including all FATs
-		dataSectors         uint32 // Active partition data sectors
-		unusedSectors       uint32 // Active partition unused sectors (this is also the offset of the partition)
-		reservedSectorCount uint32 // Active partition reserved sectors
-		isFat16             bool
-		fat                 []byte
-	}
+	activePartition *fatPartition
 }
 
 func sdWaitForInterrupt(mask uint32) int {

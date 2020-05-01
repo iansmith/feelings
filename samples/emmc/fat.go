@@ -91,7 +91,9 @@ func strlenWithTerminator(p []uint8, terminator uint8) int {
 // read that volume's BIOS Parameter Block
 //
 func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in setup by Init
-	sdCard := sdCardInfo{}
+	sdCard := sdCardInfo{
+		activePartition: &fatPartition{},
+	}
 	read, buffer := sdReadblock(0, 1)
 	if read == 0 {
 		return nil
@@ -201,13 +203,13 @@ func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in set
 			return nil
 		}
 		sdCard.activePartition.fatSize = uint32(bpbFull.Nf) * uint32(bpbFull.Spf16)
-		sdCard.activePartition.isFat16 = true
+		sdCard.activePartition.isFAT16 = true
 	}
 	return &sdCard
 }
 
-func (s *sdCardInfo) clusterNumberToSector(clusterNumber uint32) uint32 {
-	return ((clusterNumber - 2) * s.activePartition.sectorsPerCluster) + s.activePartition.fatOrigin + s.activePartition.fatSize
+func (f *fatPartition) clusterNumberToSector(clusterNumber uint32) uint32 {
+	return ((clusterNumber - 2) * f.sectorsPerCluster) + f.fatOrigin + f.fatSize
 }
 
 func (f *rawDirEnt) unpack(buffer []uint8) bool {
@@ -387,9 +389,11 @@ func (f *FAT32Filesystem) Open(path string) (io.Reader, *PosixError) {
 	if err != nil {
 		return nil, err
 	}
-	reader := newFATDataReader(uint32(entry.firstClusterHi)*256+uint32(entry.firstClusterLo), f.sdcard, f.tranq)
-	if reader != nil {
-		trust.Errorf("unable!\n")
+	trust.Infof("resolved %s: %+v", entry.Name, entry)
+	reader := newFATDataReader(uint32(entry.firstClusterHi)*256+uint32(entry.firstClusterLo),
+		f.sdcard.activePartition, f.tranq, entry.Size)
+	if reader == nil {
+		trust.Errorf("unable to create new FATDataReader! need better error\n")
 		return nil, EUnknown // xxxx errors.New("should be the correct error here")
 	}
 	return reader, nil
@@ -445,7 +449,7 @@ func (f *FAT32Filesystem) readDirFromSector(path string, sector uint32) (*Dir, *
 	var r int
 	lfnSeqCurr := 0 //lfn's numbered from 1
 	var raw rawDirEnt
-	fr := newFATDataReader(sector, f.sdcard, f.tranq) //get root directory
+	fr := newFATDataReader(sector, f.sdcard.activePartition, f.tranq, 0) //get root directory
 	result := NewDir(f, path, sector, 32)
 outer:
 	for {
@@ -495,7 +499,6 @@ outer:
 			if len(shortName) == 0 {
 				trust.Warnf("found a short name for a file that is empty!")
 			}
-			//fmt.Printf("\t (%s, %s)\n", lfnSeq, shortName)
 			longName := shortName
 			if lfnSeqCurr > 0 {
 				longName = lfnSeq

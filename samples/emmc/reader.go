@@ -13,20 +13,23 @@ import (
 // 2.each sector in the cluster
 // 3.each byte of each sector
 type fatDataReader struct {
-	sdcard       *sdCardInfo
-	tranquil     bufferManager
-	cluster      uint32
-	sector       uint32
-	sectorData   unsafe.Pointer // sectorSize
-	current      uint32         // [0, sectorSize)
-	finishedInit bool
+	tranquil      bufferManager
+	cluster       uint32
+	sector        uint32
+	sectorData    unsafe.Pointer // sectorSize
+	current       uint32         // [0, sectorSize)
+	finishedInit  bool
+	size          uint32
+	totalConsumed uint32
+	partition     *fatPartition
 }
 
-func newFATDataReader(cluster uint32, sdcard *sdCardInfo, t bufferManager) *fatDataReader {
+func newFATDataReader(cluster uint32, partition *fatPartition, t bufferManager, size uint32) *fatDataReader {
 	dr := &fatDataReader{
-		cluster:  cluster,
-		sdcard:   sdcard,
-		tranquil: t,
+		cluster:   cluster,
+		tranquil:  t,
+		partition: partition,
+		size:      size,
 	}
 	//we want to initialize the page data
 	if e := dr.getMoreData(); e != bcm2835.SDOk {
@@ -47,12 +50,26 @@ func (f *fatDataReader) Read(p []byte) (int, error) {
 	atEOF := false
 	isError := false
 	result := 0
-	//make the simple case fast
+	//this is the case where we want to stop, despite not being out of data... have to be
+	//careful with size 0 directories...
+	if f.size > 0 && f.totalConsumed == f.size {
+		atEOF = true
+		goto returnError
+	}
+	//check to make sure we don't read past the end of the file, but we don't know how
+	//large a directory is (size==0)
+	if f.size > 0 && l < sectorSize && l > int(f.size-f.totalConsumed) {
+		l = int(f.size - f.totalConsumed) //clip it to the amount remaining w.r.t. size
+		trust.Infof("last page, clipped to %d b/c %d-%d", l, f.size, f.totalConsumed)
+	}
+	//wants less than what is available on this page
 	if f.current+uint32(l) < sectorSize {
+		base := (uintptr)(unsafe.Pointer(uintptr(f.sectorData) + uintptr(f.current)))
 		for i := 0; i < l; i++ {
-			p[i] = *((*uint8)(unsafe.Pointer(uintptr(f.sectorData) + uintptr(f.current) + uintptr(i))))
+			p[i] = *((*uint8)(unsafe.Pointer(base + uintptr(i))))
 		}
 		f.current += uint32(l)
+		f.totalConsumed += uint32(l)
 		result = l
 	} else {
 		//this is the case of reading the remainder of this page
@@ -61,8 +78,10 @@ func (f *fatDataReader) Read(p []byte) (int, error) {
 			p[i] = *((*uint8)(unsafe.Pointer(uintptr(f.sectorData) + uintptr(f.current) + uintptr(i))))
 		}
 		f.current += remaining //makes it sectorSize
+		f.totalConsumed += uint32(remaining)
 		result = int(remaining)
 	}
+	//at the edge of a page
 	if f.current == sectorSize {
 		if f.endOfClusterChain() { //this is the EOF cause by no more data
 			atEOF = true
@@ -83,14 +102,13 @@ returnError:
 		return 0, errors.New("need to return a better error code from read")
 	}
 	if atEOF {
-		trust.Errorf("reached the end of the last FAT32 page")
 		return 0, io.EOF
 	}
 	panic("unknown read state")
 }
 
 func (f *fatDataReader) endOfClusterChain() bool {
-	if f.sdcard.activePartition.isFat16 {
+	if f.partition.isFAT16 {
 		return f.cluster < 2 || f.cluster >= fat16EOCBoundary
 	}
 	return f.cluster < 2 || f.cluster >= fat32EOCBoundary
@@ -106,18 +124,18 @@ func (f *fatDataReader) getNextClusterInChain() (uint32, int) {
 
 	//load the needed page
 	distance := uintptr(f.cluster) << 2
-	if f.sdcard.activePartition.isFat16 {
+	if f.partition.isFAT16 {
 		distance = uintptr(f.cluster) << 1
 	}
 	sectorOfFAT := distance >> 9 // divide by sectorSize
-	ptr, err := f.tranquil.PossiblyLoad(f.sdcard.activePartition.fatOrigin + uint32(sectorOfFAT))
+	ptr, err := f.tranquil.PossiblyLoad(f.partition.fatOrigin + uint32(sectorOfFAT))
 	if err != nil {
 		trust.Errorf("error reading fat sector " + err.Error())
 		return 0, bcm2835.SDError
 	}
 	offset := distance % sectorSize
 
-	if f.sdcard.activePartition.isFat16 {
+	if f.partition.isFAT16 {
 		base := (*uint16)(unsafe.Pointer(uintptr(ptr) + offset)) // <<1 is because 2 bytes per
 		next = uint32(*base)
 	} else {
@@ -125,7 +143,7 @@ func (f *fatDataReader) getNextClusterInChain() (uint32, int) {
 		next = *base
 	}
 	f.cluster = next
-	if f.sdcard.activePartition.isFat16 {
+	if f.partition.isFAT16 {
 		warnFAT16ChainValue(next)
 	} else {
 		warnFAT32ChainValue(next)
@@ -149,7 +167,7 @@ func (f *fatDataReader) getMoreData() int {
 	if !f.endOfClusterChain() {
 		//fetch the next page
 		var err error
-		f.sectorData, err = f.tranquil.PossiblyLoad(f.sdcard.clusterNumberToSector(f.cluster))
+		f.sectorData, err = f.tranquil.PossiblyLoad(f.partition.clusterNumberToSector(f.cluster))
 		if err != nil {
 			trust.Errorf("unable to read data sector: %v", err.Error())
 			return bcm2835.SDError
@@ -197,25 +215,3 @@ func warnFAT16ChainValue(v uint32) {
 		trust.Warnf("Ignoring bad sector value in FAT16 chain, assuming end-of-cluster: ", v)
 	}
 }
-
-//func open(fullyQualifiedRaw string) (*os.File, error) {
-//	path := filepath.Clean(fullyQualifiedRaw)
-//	path = strings.TrimSpace(path)
-//	if path[0] != os.PathSeparator {
-//		return nil, errors.New("only handles fully qualified path:" + fullyQualifiedRaw)
-//	}
-//	remainder := path[1:]
-//	left := ""
-//	for remainder != "" {
-//		pieces := strings.SplitN(current, string(os.PathSeparator), 2)
-//		if len(pieces) == 1 {
-//			left = pieces[0]
-//			remainder = ""
-//		} else {
-//			left = pieces[0]
-//			remainder = pieces[1]
-//		}
-//
-//	}
-//
-//}

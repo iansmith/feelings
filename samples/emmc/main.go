@@ -50,7 +50,7 @@ func main() {
 				if n == 0 {
 					continue
 				}
-				s := string(buffer[n])
+				s := string(buffer[:n])
 				fmt.Printf(s)
 			}
 		}
