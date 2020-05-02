@@ -5,7 +5,6 @@ import (
 	"feelings/src/hardware/videocore"
 	"feelings/src/lib/trust"
 	rt "feelings/src/tinygo_runtime"
-	"unsafe"
 )
 
 //export raw_exception_handler
@@ -43,8 +42,7 @@ func main() {
 		rt.Abort("giving up")
 	}
 
-	console := NewFBConsole(info, (*PCScreenFont)(unsafe.Pointer(&binary_font_psf_start)))
-	logger := trust.NewLogger(console)
+	logger := videocore.NewConsoleLogger()
 
 	id, ok := videocore.BoardID()
 	if ok == false {
