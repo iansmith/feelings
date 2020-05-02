@@ -4,6 +4,7 @@ import (
 	"feelings/src/hardware/rpi"
 	"feelings/src/lib/semihosting"
 	"feelings/src/lib/trust"
+	"fmt"
 	"unsafe"
 
 	"github.com/tinygo-org/tinygo/src/device/arm"
@@ -37,6 +38,8 @@ const MailboxTagBoardRevision = 0x00010002
 const MailboxTagMACAddress = 0x00010003
 const MailboxTagGetClockRate = 0x00030002
 const MailboxTagLast = 0x0
+const MailboxTagGetVCMemory = 0x00010006
+const MailboxTagGetARMMemory = 0x00010005
 
 /* framebuffer related */
 const MailboxTagSetPhysicalWidthHeight = 0x00048003
@@ -226,10 +229,22 @@ func GetClockRate() (uint32, bool) {
 	}
 	return buffer.s[6].Get(), true
 }
+func GetVCMemoryAndBase() (uint32, uint32, bool) {
+	buffer := message(0, MailboxTagGetVCMemory, 2)
+	if !Call(MailboxChannelProperties, buffer) {
+		return 7912, 17912, false
+	}
+	return buffer.s[5].Get(), buffer.s[6].Get(), true
 
-func slotOffset(ptr32 *uint32, slot int) *uint32 {
-	newptr := uintptr(unsafe.Pointer(ptr32)) + uintptr(4*slot)
-	return (*uint32)(unsafe.Pointer(newptr))
+}
+
+func GetARMMemoryAndBase() (uint32, uint32, bool) {
+	buffer := message(0, MailboxTagGetARMMemory, 2)
+	if !Call(MailboxChannelProperties, buffer) {
+		return 7914, 17914, false
+	}
+	return buffer.s[5].Get(), buffer.s[6].Get(), true
+
 }
 
 //pass in the number of bytes you want to be aligned to 16byte boundary
@@ -245,15 +260,33 @@ func sixteenByteAlignedPointer(size uintptr) *uint64 {
 	}
 	return hackFor16ByteAlignment
 }
-
-func dumpMessage(ptr *uint32, numSlots int) {
-	print("message dump")
-	for i := 0; i < numSlots; i++ {
-		print(i, ",", *slotOffset(ptr, i), "\n")
-	}
+func SetFramebufferRes1920x1200() *FrameBufferInfo {
+	return setFramebufferRes(uint32(1920), uint32(1200))
 }
 
 func SetFramebufferRes1024x768() *FrameBufferInfo {
+	return setFramebufferRes(uint32(1024), uint32(768))
+}
+
+func SetVirtualOffset(x uint32, y uint32) bool {
+	buffer := message(2, MailboxTagSetVirtualOffset, 2)
+	buffer.s[5].Set(x)
+	buffer.s[6].Set(y)
+	if !Call(MailboxChannelProperties, buffer) {
+		return false
+	}
+	if buffer.s[5].Get() != x {
+		fmt.Printf("unable to set virtual offset X to %d (got %d)", x, buffer.s[5].Get())
+		return false
+	}
+	if buffer.s[6].Get() != y {
+		fmt.Printf("unable to set virtual offset Y to %d (got %d)", x, buffer.s[5].Get())
+		return false
+	}
+	return true
+}
+
+func setFramebufferRes(widthPixels uint32, heightPixels uint32) *FrameBufferInfo {
 
 	ptr := sixteenByteAlignedPointer(uintptr(36 << 2)) //32 bit slots
 	ptr32 := ((*uint32)(unsafe.Pointer(ptr)))
@@ -265,14 +298,14 @@ func SetFramebufferRes1024x768() *FrameBufferInfo {
 	mbox.s[2].Set(MailboxTagSetPhysicalWidthHeight)
 	mbox.s[3].Set(8)
 	mbox.s[4].Set(8)
-	mbox.s[5].Set(1024) //Width
-	mbox.s[6].Set(768)  //Width
+	mbox.s[5].Set(widthPixels)  //Width
+	mbox.s[6].Set(heightPixels) //height
 
 	mbox.s[7].Set(MailboxTagSetVirtualWidthHeight)
 	mbox.s[8].Set(8)
 	mbox.s[9].Set(8)
-	mbox.s[10].Set(1024) //virtual Width
-	mbox.s[11].Set(768)  //virtual Height
+	mbox.s[10].Set(widthPixels)  //virtual Width
+	mbox.s[11].Set(heightPixels) //virtual Height
 
 	mbox.s[12].Set(MailboxTagSetVirtualOffset)
 	mbox.s[13].Set(8)
