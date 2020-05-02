@@ -5,7 +5,6 @@ import (
 	"feelings/src/hardware/videocore"
 	"feelings/src/lib/trust"
 	rt "feelings/src/tinygo_runtime"
-	"unsafe"
 )
 
 //export raw_exception_handler
@@ -15,36 +14,17 @@ func raw_exception_handler() {
 //go:extern _binary_font_psf_start
 var binary_font_psf_start [0]byte
 
-/* PC Screen Font as used by Linux Console */
-type PCScreenFont struct {
-	Magic         uint32
-	Version       uint32
-	Headersize    uint32
-	Flags         uint32
-	NumGlyphs     uint32
-	BytesPerGlyph uint32
-	Height        uint32
-	Width         uint32
-}
-
 func main() {
 	rt.MiniUART = rt.NewUART()
 	_ = rt.MiniUART.Configure(rt.UARTConfig{ /*no interrupt*/ })
-	trust.Errorf("hello bold big %s\n", "universe")
-
+	trust.Infof("kernel logging to mini UART (serial)")
 	var size, base uint32
 
 	//info := videocore.SetFramebufferRes1920x1200()
 	//if info == nil {
 	//	rt.Abort("giving up")
 	//}
-	info := videocore.SetFramebufferRes1024x768()
-	if info == nil {
-		rt.Abort("giving up")
-	}
-
-	console := NewFBConsole(info, (*PCScreenFont)(unsafe.Pointer(&binary_font_psf_start)))
-	logger := trust.NewLogger(console)
+	logger := videocore.NewConsoleLogger()
 
 	id, ok := videocore.BoardID()
 	if ok == false {
