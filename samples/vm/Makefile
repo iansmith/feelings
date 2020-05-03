@@ -3,10 +3,11 @@ all: clean kernel8.img
 # we use the bare metal linker script for the bootloader
 vm: *.go font.o
 	clang --target=aarch64-elf -c -o ../../tinygo_conf/assembly/baremetal_boot.o ../../src/hardware/arm-cortex-a53/barmetal_boot.S
-	tinygo build -target ../../tinygo_conf/rpi3.json -ldflags='../../tinygo_conf/assembly/baremetal_boot.o ./font.o -T ../../tinygo_conf/rpi3.ld' -o vm .
+	clang --target=aarch64-elf -c -o ../../tinygo_conf/assembly/set_regs.o ./set_regs.S
+	tinygo build -target ../../tinygo_conf/rpi3.json -ldflags='../../tinygo_conf/assembly/baremetal_boot.o ../../tinygo_conf/assembly/set_regs.o ./font.o -T ../../tinygo_conf/rpi3.ld' -o vm .
 
 clean:
-	rm vm kernel8.img *.o >/dev/null 2>/dev/null || true
+	rm vm kernel8.img *.o ../../tinygo_conf/assembly/baremetal_boot.o ../../tinygo_conf/assembly/set_regs.o   >/dev/null 2>/dev/null || true
 
 kernel8.img: vm
 	llvm-objcopy -O binary vm kernel8.img

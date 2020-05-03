@@ -44,7 +44,9 @@ const MemoryDeviceNoGatherNoReorderNoEarlyWriteAckValue = 0x00 //it's hardware r
 const MemoryNoCacheValue = 0x44                                //not inner or outer cacheable
 const MemoryNormalValue = 0xFF                                 //cache all you want, including using TLB
 
-//go:extern enable_mmu_tables
+const UndocumentedTTBRCNP = 0x1
+
+//export _enable_mmu_tables
 func enableMMUTables(mairVal uint64, tcrVal uint64, sctrlVal uint64, ttbr0 uint64, ttbr1 uint64)
 
 var logger *trust.Logger
@@ -132,8 +134,8 @@ func main() {
 		(0b01 << 8) | //write back (inner)
 		(20 << 0))) //20 is T0SZ, 42 bit addr space
 
-	TTBR0Val := uint64((0x100000 << 7)) //base addr 0x10_0000, no other shenanigans
-	TTBR1Val := uint64((0x100000 << 7)) //base addr 0x10_0000, no other shenanigans
+	TTBR0Val := uint64((0x100000 << 7) | UndocumentedTTBRCNP) //base addr 0x10_0000, no other shenanigans
+	TTBR1Val := uint64((0x100000 << 7) | UndocumentedTTBRCNP) //base addr 0x10_0000, no other shenanigans
 
 	SCTRLEL1Val := uint64((0xC00800) | //mandatory reserved 1 bits
 		(1 << 12) | // I Cache for both el1 and el0
@@ -192,26 +194,25 @@ func main() {
 
 	//go live!
 	logger.Infof("going live!")
-	if MAIRVal > 0 {
-		logger.Debugf("self test zero                   0x0 = 0x%16x", selfTest(0))
-		logger.Debugf("self test no page             0xffff = 0x%16x", selfTest(0xFFFF))
-		logger.Debugf("self test 1st page           0x10000 = 0x%16x", selfTest(0x10000))
-		logger.Debugf("self test end 1st page       0x1ffff = 0x%16x", selfTest(0x1ffff))
-		logger.Debugf("self test start of tables   0x100000 = 0x%16x", selfTest(0x100000))
-		logger.Debugf("self test middle of tables  0x1108C0 = 0x%16x", selfTest(0x1108C0))
-		logger.Debugf("self test base load addr    0x300000 = 0x%16x", selfTest(0x300000))
-		logger.Debugf("self test start of vc4ram 0x3C000000 = 0x%16x", selfTest(0x3C000000))
-		logger.Debugf("self test end of vc4ram   0x3EFFFFFF = 0x%16x", selfTest(0x3EFFFFFF))
-		logger.Debugf("self test start of perpih 0x3F000000 = 0x%16x", selfTest(0x3F000000))
-		logger.Debugf("self test end of periph   0x3FFFFFFF = 0x%16x", selfTest(0x3FFFFFFF))
-		logger.Debugf("self test start of mbox   0x40000000 = 0x%16x", selfTest(0x40000000))
-		logger.Debugf("self test end of mbox     0x401FFFFF = 0x%16x", selfTest(0x401FFFFF))
-		for {
-			arm.Asm("nop")
-		}
-	} else {
-		enableMMUTables(MAIRVal, TCREL1Val, SCTRLEL1Val, TTBR0Val, TTBR1Val)
-	}
+	logger.Debugf("self test zero                   0x0 = 0x%16x", selfTest(0))
+	logger.Debugf("self test no page             0xffff = 0x%16x", selfTest(0xFFFF))
+	logger.Debugf("self test 1st page           0x10000 = 0x%16x", selfTest(0x10000))
+	logger.Debugf("self test end 1st page       0x1ffff = 0x%16x", selfTest(0x1ffff))
+	logger.Debugf("self test boot load addr     0x80820 = 0x%16x", selfTest(0x80820))
+	logger.Debugf("self test start of tables   0x100000 = 0x%16x", selfTest(0x100000))
+	logger.Debugf("self test middle of tables  0x1108C0 = 0x%16x", selfTest(0x1108C0))
+	logger.Debugf("self test base load addr    0x300000 = 0x%16x", selfTest(0x300000))
+	logger.Debugf("self test start of vc4ram 0x3C000000 = 0x%16x", selfTest(0x3C000000))
+	logger.Debugf("self test end of vc4ram   0x3EFFFFFF = 0x%16x", selfTest(0x3EFFFFFF))
+	logger.Debugf("self test start of perpih 0x3F000000 = 0x%16x", selfTest(0x3F000000))
+	logger.Debugf("self test end of periph   0x3FFFFFFF = 0x%16x", selfTest(0x3FFFFFFF))
+	logger.Debugf("self test start of mbox   0x40000000 = 0x%16x", selfTest(0x40000000))
+	logger.Debugf("self test end of mbox     0x401FFFFF = 0x%16x", selfTest(0x401FFFFF))
+	logger.Debugf("self test TTBR0                      = 0x%16x", selfTest(uintptr(TTBR0Val)))
+	//for {
+	//	arm.Asm("nop")
+	//}
+	enableMMUTables(MAIRVal, TCREL1Val, SCTRLEL1Val, TTBR0Val, TTBR1Val)
 
 	//we are live!
 	logger.Infof("we are done!")
