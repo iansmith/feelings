@@ -51,7 +51,7 @@ func enableMMUTables(mairVal uint64, tcrVal uint64, sctrlVal uint64, ttbr0 uint6
 
 var logger *trust.Logger
 
-func main() {
+func xxmain() {
 	rt.MiniUART = rt.NewUART()
 	_ = rt.MiniUART.Configure(rt.UARTConfig{ /*no interrupt*/ })
 	trust.Errorf("hello world, UART initialized for logging")
@@ -134,8 +134,11 @@ func main() {
 		(0b01 << 8) | //write back (inner)
 		(20 << 0))) //20 is T0SZ, 42 bit addr space
 
-	TTBR0Val := uint64((0x100000 << 7) | UndocumentedTTBRCNP) //base addr 0x10_0000, no other shenanigans
-	TTBR1Val := uint64((0x100000 << 7) | UndocumentedTTBRCNP) //base addr 0x10_0000, no other shenanigans
+	// Undocumented TTBRCNP from BZT's tutorial....
+	//TTBR0Val := uint64((0x100000 << 7) | UndocumentedTTBRCNP) //base addr 0x10_0000, no other shenanigans
+	//TTBR1Val := uint64((0x100000 << 7) | UndocumentedTTBRCNP) //base addr 0x10_0000, no other shenanigans
+	TTBR0Val := uint64(0x10_0000)
+	TTBR1Val := uint64(0x10_0000)
 
 	SCTRLEL1Val := uint64((0xC00800) | //mandatory reserved 1 bits
 		(1 << 12) | // I Cache for both el1 and el0
@@ -282,4 +285,11 @@ func makePhysicalBlockEntry(destination uintptr, mairIndex uint64) uint64 {
 			uint64(3<<8) | //inner
 			uint64(mairIndex<<2) | uint64(1<<0)) //last two bits are 0b01 to indicate block entry
 	return result
+}
+
+func main() {
+	rt.MiniUART = rt.NewUART()
+	_ = rt.MiniUART.Configure(rt.UARTConfig{ /*no interrupt*/ })
+	trust.Errorf("hello world, UART initialized for logging")
+
 }

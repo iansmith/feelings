@@ -16,7 +16,7 @@ font.o: font.psf
 	ld.lld -m aarch64elf -r -b binary -o font.o font.psf
 
 run:
-	qemu-system-aarch64 -M raspi3 -kernel kernel8.img -serial null -serial stdio \
+	qemu-system-aarch64 -M raspi3 -kernel kernel8.img -serial null -serial stdio
 
 #-chardev pty,id=char1
 #-drive file=outfile.bin,if=sd,format=raw
