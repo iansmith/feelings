@@ -1,10 +1,10 @@
 package arm_cortex_a53
 
 import (
-	"feelings/src/hardware/rpi"
+	"hardware/rpi"
 	"unsafe"
 
-	"github.com/tinygo-org/tinygo/src/runtime/volatile"
+	"runtime/volatile"
 )
 
 type ARMTimerRegisterMap struct {
@@ -71,3 +71,4 @@ const QuadA7TimerInterruptFlagClear = 1 << 31
 const QuadA7TimerReload = 1 << 30
 
 const QuadA7NonSecurePhysicalTimer = 1 << 1
+const QuadA7GPUFast = 1 << 8

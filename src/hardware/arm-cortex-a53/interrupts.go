@@ -1,8 +1,7 @@
 package arm_cortex_a53
 
 import (
-	"feelings/src/hardware/bcm2835"
-	"github.com/tinygo-org/tinygo/src/device/arm"
+	"device/arm"
 )
 
 //////////////////////////////////////////////////////////////////
@@ -31,51 +30,51 @@ func proc_hang()
 
 // Called to make sure all the interrupt machinery is in the right startup state.
 //go:noinline
-func InitExceptionVector() {
-	for i := 0; i < len(excptrs); i++ {
-		excptrs[i] = unexpectedException
-	}
-	arm.Asm("adr    x0, vectors") // load VBAR_EL1 with exc vector
-	arm.Asm("msr    vbar_el1, x0")
-	MaskDAIF()
-	bcm2835.InterruptController.DisableIRQs1.SetBits(bcm2835.AuxInterrupt | bcm2835.SystemTimerIRQ1)
-}
-
-func SetExceptionHandlerEl1hInterrupts(h exceptionHandler) {
-	excptrs[5] = h
-}
-
-func SetExceptionHandlerEl1hSynchronous(h exceptionHandler) {
-	excptrs[4] = h
-}
-
-// when an interrupt falls in the woods and nobody is around to hear it
-//go:noinline
-//go:export raw_exception_handler
-func rawExceptionHandler(t uint64, esr uint64, addr uint64) {
-	excptrs[t](t, esr, addr)
-}
-
-//go:noinline
-func unexpectedException(t uint64, esr uint64, addr uint64) {
-	print("Unexpected Exception: ")
-	print(entryErrorMessages[t])
-	print(", ESR ")
-	print(esr)
-	reason := esr >> 26
-	reason &= 0x3f
-	print(top6ToESRReason(reason))
-	reason = esr >> 25
-	reason &= 0x3f
-	print(top6ToESRReason(reason))
-
-	print(", ADDR ")
-	print(addr)
-	print("\n")
-	for {
-		arm.Asm("nop")
-	}
-}
+// func InitExceptionVector() {
+// 	for i := 0; i < len(excptrs); i++ {
+// 		excptrs[i] = unexpectedException
+// 	}
+// 	arm.Asm("adr    x0, vectors") // load VBAR_EL1 with exc vector
+// 	arm.Asm("msr    vbar_el1, x0")
+// 	MaskDAIF()
+// 	bcm2835.InterruptController.DisableIRQs1.SetBits(bcm2835.AuxInterrupt | bcm2835.SystemTimerIRQ1)
+// }
+//
+// func SetExceptionHandlerEl1hInterrupts(h exceptionHandler) {
+// 	excptrs[5] = h
+// }
+//
+// func SetExceptionHandlerEl1hSynchronous(h exceptionHandler) {
+// 	excptrs[4] = h
+// }
+//
+// // when an interrupt falls in the woods and nobody is around to hear it
+// //go:noinline
+// //go:export raw_exception_handler
+// func rawExceptionHandler(t uint64, esr uint64, addr uint64) {
+// 	excptrs[t](t, esr, addr)
+// }
+//
+// //go:noinline
+// func unexpectedException(t uint64, esr uint64, addr uint64) {
+// 	print("Unexpected Exception: ")
+// 	print(entryErrorMessages[t])
+// 	print(", ESR ")
+// 	print(esr)
+// 	reason := esr >> 26
+// 	reason &= 0x3f
+// 	print(top6ToESRReason(reason))
+// 	reason = esr >> 25
+// 	reason &= 0x3f
+// 	print(top6ToESRReason(reason))
+//
+// 	print(", ADDR ")
+// 	print(addr)
+// 	print("\n")
+// 	for {
+// 		arm.Asm("nop")
+// 	}
+// }
 
 func top6ToESRReason(shifted uint64) string {
 	switch shifted {

@@ -1,6 +1,6 @@
 package bcm2835
 
-import "github.com/tinygo-org/tinygo/src/runtime/volatile"
+import "runtime/volatile"
 
 type GPIORegisterMap struct {
 	FuncSelect               [6]volatile.Register32 //0x00,04,08,0C,10, and 14
@@ -52,16 +52,16 @@ const GPIOAltFunc1 GPIOMode = 5
 const GPIOAltFunc2 GPIOMode = 6
 const GPIOAltFunc3 GPIOMode = 7
 
-func GPIOSetup(pinNumber uint8, mode GPIOMode) bool {
-	if pinNumber > 54 { //54 pins on RPI
-		return false
-	} // Check GPIO pin number valid, return false if invalid
-	var shift uint8
-	shift = ((pinNumber % 10) * 3) // Create shift amount
-
-	value := uint32(7)
-	mask := uint32(7)
-
-	GPIO.FuncSelect[int(mode)].ReplaceBits(value, mask, shift)
-	return true // Return true
-}
+//func GPIOSetup(pinNumber uint8, mode GPIOMode) bool {
+//	if pinNumber > 54 { //54 pins on RPI
+//		return false
+//	} // Check GPIO pin number valid, return false if invalid
+//	var shift uint8
+//	shift = ((pinNumber % 10) * 3) // Create shift amount
+//
+//	value := uint32(7)
+//	mask := uint32(7)
+//
+//	GPIO.FuncSelect[int(mode)].ReplaceBits(value, mask, shift)
+//	return true // Return true
+//}

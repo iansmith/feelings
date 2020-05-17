@@ -1,40 +1,40 @@
 package tinygo_runtime
 
 import (
-	p "feelings/src/hardware/bcm2835"
+	p "hardware/bcm2835"
 
 	"unsafe"
 
-	"github.com/tinygo-org/tinygo/src/device/arm"
+	"device/arm"
 )
 
-//decls
-var MiniUART *UART
-
-func Abort(s string) {
-	MiniUART.WriteString("Aborting..." + s + "\n")
-	for {
-		arm.Asm("nop")
-	}
-}
-
+// //decls
+// var MiniUART *UART
 //
-// Wait MuSec waits for at least n musecs based on the system timer. This is a busy wait.
+// func Abort(s string) {
+// 	MiniUART.WriteString("Aborting..." + s + "\n")
+// 	for {
+// 		arm.Asm("nop")
+// 	}
+// }
 //
-//go:export WaitMuSec
-func WaitMuSec(n uint64) {
-	var f, t, r uint64
-	arm.AsmFull(`mrs x0, cntfrq_el0
-		str x0,{f}
-		mrs x1, cntpct_el0
-		str x1,{t}`, map[string]interface{}{"f": &f, "t": &t})
-	//expires at t
-	t += ((f / 1000) * n) / 1000
-	for r < t {
-		arm.AsmFull(`mrs x1, cntpct_el0
-			str x1,{r}`, map[string]interface{}{"r": &r})
-	}
-}
+// //
+// // Wait MuSec waits for at least n musecs based on the system timer. This is a busy wait.
+// //
+// //go:export WaitMuSec
+// func WaitMuSec(n uint64) {
+// 	var f, t, r uint64
+// 	arm.AsmFull(`mrs x0, cntfrq_el0
+// 		str x0,{f}
+// 		mrs x1, cntpct_el0
+// 		str x1,{t}`, map[string]interface{}{"f": &f, "t": &t})
+// 	//expires at t
+// 	t += ((f / 1000) * n) / 1000
+// 	for r < t {
+// 		arm.AsmFull(`mrs x1, cntpct_el0
+// 			str x1,{r}`, map[string]interface{}{"r": &r})
+// 	}
+// }
 
 //
 // RPI has many uarts, this is the "miniuart" which is the simplest to configure.
@@ -386,3 +386,26 @@ func BoardRevisionDecode(s string) string {
 	}
 	return "unknown board"
 }
+
+//
+// Wait MuSec waits for at least n musecs based on the system timer. This is a busy wait.
+//
+//func WaitMuSec(n uint64) {
+//	start:=runtime.Semihostingv2Call(uint64(runtime.Semihostingv2OpClock), 0)
+//	centis:=int64(n)/tickMicros
+//	current:=start
+//	for current-start<centis{ //busy wait
+//		for i:=0; i<20; i++ {
+//			arm.Asm("nop")
+//		}
+//		current=runtime.Semihostingv2Call(uint64(runtime.Semihostingv2OpClock), 0)
+//	}
+//}
+
+//
+// SysTimer gets the 64 bit timer's value.
+//
+//func SystemTime() uint64 {
+//	current:=runtime.Semihostingv2Call(uint64(runtime.Semihostingv2OpClock), 0)
+//	return current*machine.tickMicros
+//}

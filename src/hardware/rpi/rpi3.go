@@ -1,4 +1,4 @@
-// +build rpi3
+// +build rpi3 rpi3_qemu
 
 package rpi
 

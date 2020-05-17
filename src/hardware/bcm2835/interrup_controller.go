@@ -1,6 +1,6 @@
 package bcm2835
 
-import "github.com/tinygo-org/tinygo/src/runtime/volatile"
+import "runtime/volatile"
 
 type IRQRegisterMap struct {
 	IRQBasicPending  volatile.Register32 //0x00

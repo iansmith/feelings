@@ -3,7 +3,7 @@
 package bcm2835
 
 import (
-	"feelings/src/hardware/rpi"
+	"hardware/rpi"
 	"unsafe"
 )
 
