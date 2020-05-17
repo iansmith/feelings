@@ -15,6 +15,8 @@ type ARMTimerRegisterMap struct {
 	RawIRQ      volatile.Register32 //0x10
 	MaskedIRQ   volatile.Register32 //0x14
 	Reload      volatile.Register32 //0x18
+	PreDivider  volatile.Register32 //0x1C
+	Free        volatile.Register32 //0x20
 }
 
 var ARMTimer *ARMTimerRegisterMap = (*ARMTimerRegisterMap)(unsafe.Pointer(rpi.MemoryMappedIO + 0xB000))

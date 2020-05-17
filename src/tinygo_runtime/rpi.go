@@ -8,34 +8,6 @@ import (
 	"device/arm"
 )
 
-// //decls
-// var MiniUART *UART
-//
-// func Abort(s string) {
-// 	MiniUART.WriteString("Aborting..." + s + "\n")
-// 	for {
-// 		arm.Asm("nop")
-// 	}
-// }
-//
-// //
-// // Wait MuSec waits for at least n musecs based on the system timer. This is a busy wait.
-// //
-// //go:export WaitMuSec
-// func WaitMuSec(n uint64) {
-// 	var f, t, r uint64
-// 	arm.AsmFull(`mrs x0, cntfrq_el0
-// 		str x0,{f}
-// 		mrs x1, cntpct_el0
-// 		str x1,{t}`, map[string]interface{}{"f": &f, "t": &t})
-// 	//expires at t
-// 	t += ((f / 1000) * n) / 1000
-// 	for r < t {
-// 		arm.AsmFull(`mrs x1, cntpct_el0
-// 			str x1,{r}`, map[string]interface{}{"r": &r})
-// 	}
-// }
-
 //
 // RPI has many uarts, this is the "miniuart" which is the simplest to configure.
 //
