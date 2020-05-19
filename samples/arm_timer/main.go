@@ -1,32 +1,49 @@
 package main
 
 import (
+	"device/arm"
 	arm64 "hardware/arm-cortex-a53"
 	"io"
-	"device/arm"
 	"machine"
+	"unsafe"
 )
 
 var writer io.Writer
 
 var c = &ConsoleImpl{}
-const oneSecond = 40000000 //measured by hand
-
+//const oneSecond = 40000000 //measured by hand
+const oneSecond = 38400000 * 1
 //go:noinline
 func main() {
+	//#define IRQ_ENABLE2 ((volatile uint32_t *)(0x3F00B214))
+	//irqEnable1:=(*volatile.Register32)(unsafe.Pointer(uintptr(0x3F00B210)))
 	machine.MiniUART = machine.NewUART()
-	machine.MiniUART.Configure(&machine.UARTConfig{ /*no interrupt*/ })
+	machine.MiniUART.Configure(&machine.UARTConfig{ RXInterrupt: true })
 	writer=&machine.MiniUARTWriter{}
-	arm64.QuadA7.LocalInterruptRouting.Set(0)
+	c.Logf("offset of IRQPending1 %x",unsafe.Offsetof(machine.InterruptController.Pending1))
+	machine.InterruptController.EnableIRQs1.Set(1<<29)
+	//irqEnable1.Set(1<<29)
+	//arm64.QuadA7.GPUInterruptsRouting.Set(0)
 
-	arm64.QuadA7.LocalTimerControlStatus.Set(arm64.QuadA7LocalTimerControlInterruptEnable | arm64.QuadA7LocalTimerControlTimerEnable| oneSecond)
-	arm64.QuadA7.LocalTimerWriteFlags.Set(arm64.QuadA7TimerInterruptFlagClear | arm64.QuadA7TimerReload)
-	arm64.QuadA7.Core0TimerInterruptControl.Set( arm64.QuadA7NonSecurePhysicalTimer) //nCNTPNSIRQ_IRQ for SVC mode (EL1)
+	//lower:=arm64.QuadA7.CoreTimerLower32.Get()
+	//upper:=arm64.QuadA7.CoreTimerUpper32.Get()
+	//local:=(uint64(upper) << 32)|uint64(lower)
+	//
+	//c.Logf("offset is %x, prescaler => %d, local => %d\n",unsafe.Offsetof(arm64.QuadA7.Core3FIQSource),arm64.QuadA7.Prescaler.Get(), local)
+
+	arm64.QuadA7.LocalInterruptRouting.Set(0)
+	//arm64.QuadA7.LocalTimerControlStatus.Set(arm64.QuadA7LocalTimerControlInterruptEnable | arm64.QuadA7LocalTimerControlTimerEnable| oneSecond)
+	//arm64.QuadA7.LocalTimerWriteFlags.Set(arm64.QuadA7TimerInterruptFlagClear | arm64.QuadA7TimerReload)
+	arm64.QuadA7.Core0TimerInterruptControl.Set( /*arm64.QuadA7NonSecurePhysicalTimer |*/ (1<<8)) //nCNTPNSIRQ_IRQ for SVC mode (EL1)
 	arm.Asm("msr daifclr,#2")
 	for {
 		for i := 0; i < 100000000; i++ {
 			arm.Asm("nop")
 		}
+		c.Logf("checking the AUXIRQ %d, UART IIR %d, IRQ Pending1 %d, core 0 irq source %x",machine.Aux.IRQ.Get(),
+			machine.Aux.MiniUARTInterruptStatus.Get() & 0x01,
+			machine.InterruptController.Pending1.Get(),
+			arm64.QuadA7.Core0IRQSource.Get())
 	}
 }
 
@@ -46,6 +63,12 @@ var previous uint64
 func rawExceptionHandler(t uint64, esr uint64, addr uint64, el uint64, procId uint64) {
 	c.Logf("raw exception handler:exception type %d and esr %x with addr %x and EL=%d, ProcID=%x\n",
 		t,esr,addr,el,procId)
+
+	c.Logf("---> timer ping, checking AUXIRQ %d, UART IIR %d, IRQ Pending1 %d, core 0 irq source %x",machine.Aux.IRQ.Get(),
+		machine.Aux.MiniUARTInterruptStatus.Get() & 0x01,
+		machine.InterruptController.Pending1.Get(),
+		arm64.QuadA7.Core0IRQSource.Get())
+
 	if t!=5 {
 		//this is in case we get some OTHER kind of exception
 		printoutException(esr)
@@ -55,11 +78,15 @@ func rawExceptionHandler(t uint64, esr uint64, addr uint64, el uint64, procId ui
 		}
 		return
 	}
+	c.Logf("core0 source: %x, id=%d\n",arm64.QuadA7.Core0IRQSource.Get(),
+	machine.Aux.MiniUARTInterruptStatus.InterruptID())
 	//current:=machine.SystemTime()
-	//c.Logf("difference %d and %d\n",current,current/420000)
+	//lower:=arm64.QuadA7.CoreTimerLower32.Get()
+	//upper:=arm64.QuadA7.CoreTimerUpper32.Get()
+	//local:=(uint64(upper) << 32)|uint64(lower)
+	//c.Logf("difference %d and %d, local time %d\n",current,current/42000000,local)
 	//previous=current
 	arm64.QuadA7.LocalTimerWriteFlags.Set(arm64.QuadA7TimerInterruptFlagClear| arm64.QuadA7TimerReload)
-
 }
 
 
