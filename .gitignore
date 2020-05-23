@@ -1,4 +1,5 @@
 .idea
 src/pkg
 /tinygo_conf/assembly
+bin
 
