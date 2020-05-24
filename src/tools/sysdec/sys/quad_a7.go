@@ -89,19 +89,19 @@ possible GPU-IRQ/GPU-FIQ interrupt outstanding bit. `,
 				"GPUFIQRouting": {
 					BitRange: sysdec.BitRange(3, 2),
 					EnumeratedValue: map[string]*sysdec.EnumeratedValueDef{
-						"Core0": {Value: 0b00},
-						"Core1": {Value: 0b01},
-						"Core2": {Value: 0b10},
-						"Core3": {Value: 0b11},
+						"FIQToCore0": {Value: 0b00},
+						"FIQToCore1": {Value: 0b01},
+						"FIQToCore2": {Value: 0b10},
+						"FIQToCore3": {Value: 0b11},
 					},
 				},
 				"GPUIRQRouting": {
 					BitRange: sysdec.BitRange(2, 1),
 					EnumeratedValue: map[string]*sysdec.EnumeratedValueDef{
-						"Core0": {Value: 0b00},
-						"Core1": {Value: 0b01},
-						"Core2": {Value: 0b10},
-						"Core3": {Value: 0b11},
+						"IRQToCore0": {Value: 0b00},
+						"IRQToCore1": {Value: 0b01},
+						"IRQToCore2": {Value: 0b10},
+						"IRQToCore3": {Value: 0b11},
 					},
 				},
 			},
@@ -219,12 +219,6 @@ or IRQ, 0 disables it.`,
 			AddressOffset: 0x40,
 			Dim:           4,
 			DimIncrement:  4,
-			DimIndices: map[string]int{
-				"Core0": 0,
-				"Core1": 1,
-				"Core2": 2,
-				"Core3": 3,
-			},
 			Field: map[string]*sysdec.FieldDef{
 				"VirtualTimerFIQ": {
 					Description: `CNTVIRQ FIQ control. If set, this bit 

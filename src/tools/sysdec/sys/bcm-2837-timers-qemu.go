@@ -15,12 +15,12 @@ ARM peripherals manual and to disambiguate from the Chapter 14 timer
 and the ARM local timer.`,
 	AddressBlock: sysdec.AddressBlockDef{BaseAddress: 0x3000, Size: 0x1C},
 	Register: map[string]*sysdec.RegisterDef{
-		"Lower32": {
+		"SystemTimerLower32": {
 			Description:   `System Timer Counter Lower 32 bits`,
 			AddressOffset: 0x4,
 			Size:          32,
 		},
-		"Upper32": {
+		"SystemTimerUpper32": {
 			Description:   `System Timer Counter Upper 32 bits`,
 			AddressOffset: 0x8,
 			Size:          32,

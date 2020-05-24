@@ -145,7 +145,7 @@ register to be set. That is all bits except . register bits 21..25, 30
 				},
 			},
 		},
-		"FIQSource": {
+		"ICFIQSource": {
 			Description: `The FIQ register control which interrupt source 
 can generate a FIQ to the ARM. Only a single interrupt can be selected.`,
 			Size:          8,

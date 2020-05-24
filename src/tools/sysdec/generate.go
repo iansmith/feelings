@@ -199,7 +199,7 @@ func GenerateDeviceDecls(device DeviceDef, outTags string, pkg string,
 	for _, p := range device.Peripheral {
 		count := 0
 		p.RegistersWithReserved = []*RegisterDef{}
-		for i := 0; i < p.AddressBlock.Size; i += 4 {
+		for i := 0; i <= p.AddressBlock.Size; i += 4 {
 			n, ok := findRegisterAtOffset(p.Register, i)
 			if !ok {
 				resv := &RegisterDef{

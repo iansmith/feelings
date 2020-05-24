@@ -195,9 +195,9 @@ Writing with bit 2 set will clear the transmit FIFO`,
 					BitRange: sysdec.BitRange(2, 1),
 					Access:   sysdec.Access("w"),
 					EnumeratedValue: map[string]*sysdec.EnumeratedValueDef{
-						"Receive":            {Value: 0b01},
-						"Transmit":           {Value: 0b10},
-						"TransmitAndReceive": {Value: 0b11},
+						"ZeroReceive":            {Value: 0b01},
+						"ZeroTransmit":           {Value: 0b10},
+						"ZeroTransmitAndReceive": {Value: 0b11},
 					},
 				},
 				"InterruptPending": {

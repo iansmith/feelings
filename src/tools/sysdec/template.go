@@ -52,7 +52,7 @@ var deviceTemplateText = `
 ///////////////////////////////////////////////////////////////////////
 {{$pdef.Description}}
 
-var {{$pname}} *{{printf "%sDef" $pname}} = (*{{printf "%sDef" $pname}})(unsafe.Pointer({{printf "0x%x" .MMIOBase}} + {{printf "0x%x" .AddressBlock.BaseAddress}}))
+var {{$pname}} *{{printf "%sDef" $pname}} = (*{{printf "%sDef" $pname}})(unsafe.Pointer(uintptr({{printf "0x%x" .MMIOBase}} + {{printf "0x%x" .AddressBlock.BaseAddress}})))
 
 type {{printf "%sDef" $pname}} struct {
 	{{- range $rindex, $rdef := $pdef.RegistersWithReserved}}

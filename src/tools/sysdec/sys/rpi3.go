@@ -51,6 +51,7 @@ var RPI3 = sysdec.DeviceDef{
 		"IC":          IC,
 		"Aux":         Aux,
 		"QA7":         QA7,
+		"GPUMailbox":  GPUMailbox,
 		"SystemTimer": SystemTimer,
 	},
 	NumCores: 4,
@@ -59,5 +60,6 @@ var RPI3 = sysdec.DeviceDef{
 		"Aux":         0x3f00_0000,
 		"SystemTimer": 0x3f00_0000,
 		"QA7":         0x4000_0000,
+		"GPUMailbox":  0x4000_0000,
 	},
 }
