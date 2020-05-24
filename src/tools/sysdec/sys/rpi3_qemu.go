@@ -1,16 +1,24 @@
-// +build feelings_rpi3
+// +build feelings_rpi3_qemu
 
 package sys
 
 import "tools/sysdec"
 
-var RPI3 = sysdec.DeviceDef{
-	Vendor:      "Raspberry Pi Foundation",
-	VendorID:    "RPI",
-	Name:        "rpi3b",
-	Series:      "raspberry pi",
-	Version:     1, //version of this doc
-	Description: "Single Board Computer With An ARM A-53 Quad Core CPU in a BCM2837 SOC",
+//Raspberry PI 3 B+ on Qemu emulation, System View Description
+//
+//Sources:
+//BCM2835 ARM Peripherals Datasheet
+//https://elinux.org/BCM2835_datasheet_errata
+//qemu 5.0.0 source code
+
+var RPI3Qemu5 = sysdec.DeviceDef{
+	Vendor:   "Raspberry Pi Foundation",
+	VendorID: "RPI",
+	Name:     "rpi3b_qeme",
+	Series:   "raspberry pi",
+	Version:  1, //version of this doc
+	Description: "Simulator of a single board computer with an ARM A-53 quad core " +
+		"CPU in a BCM2837 SOC",
 	//license for this doc
 	LicenseText: `
 	MIT License
@@ -39,18 +47,18 @@ var RPI3 = sysdec.DeviceDef{
 		Description:         "ARM Cortex A-53",
 		Revision:            "r3p0", //arm revision scheme
 		LittleEndian:        true,
-		MMUPresent:          true,
-		FPUPresent:          true,
+		MMUPresent:          true, //on a simualator, is this true?
+		FPUPresent:          true, //on a simualator, is this true?
 		DSPPresent:          false,
-		ICachePresent:       true,
-		DCachePresent:       true,
+		ICachePresent:       true, //on a simualator, is this true?
+		DCachePresent:       true, //on a simualator, is this true?
 		DeviceNumInterrupts: 2 /*FIQ+IRQ*/ * (64 /*GPU*/ + 16 /*ARM Chip*/),
 	},
 	Peripheral: map[string]*sysdec.PeripheralDef{
 		"SOC":         BCM2837, //just for completeness
 		"IC":          IC,
 		"Aux":         Aux,
-		"SystemTimer": SystemTimer,
+		"SystemTimer": SystemTimerQEMU,
 	},
 	NumCores: 4,
 	MMIOBindings: map[string]int{

@@ -1,4 +1,4 @@
-all: rpi3.sysdec.go
+all: rpi3.sysdec.go rpi3_qemu.sysdec.go
 FEELINGS=/Users/iansmith/feelings
 
 # on macs gsed is the name of the gnu sed installed by brew, you might need it in
@@ -13,7 +13,12 @@ sysdec: generate.go intermediate.go structure.go template.go unmarshal_help.go u
 	rm -f *.sysdec.go
 	GO111MODULE=off GOPATH=$(FEELINGS) go install ./cmd/sysdec
 
-rpi3.sysdec.go: sysdec
+rpi3.sysdec.go: sysdec sys/rpi3.go sys/bcm*.go
 	GO111MODULE=off GOPATH=$(FEELINGS) $(FEELINGS)/bin/sysdec -o $(PWD)/tmp/sysdec_out.go $(LEAVE) -t feelings_rpi3 -p machine -b rpi3 sys/rpi3.go
 	cat tmp/sysdec_out.go |  $(SED) '/^[[:blank:]]*$$/d' | $(SED) 's/^xxxblankxxx//g' | gofmt > rpi3.sysdec.go
+	rm tmp/sysdec_out.go
+
+rpi3_qemu.sysdec.go: sysdec sys/rpi3_qemu.go sys/bcm*.go
+	GO111MODULE=off GOPATH=$(FEELINGS) $(FEELINGS)/bin/sysdec -o $(PWD)/tmp/sysdec_out.go $(LEAVE) -t feelings_rpi3_qemu -p machine -b rpi3_qemu sys/rpi3_qemu.go
+	cat tmp/sysdec_out.go |  $(SED) '/^[[:blank:]]*$$/d' | $(SED) 's/^xxxblankxxx//g' | gofmt > rpi3_qemu.sysdec.go
 	rm tmp/sysdec_out.go

@@ -224,9 +224,6 @@ func GenerateDeviceDecls(device DeviceDef, outTags string, pkg string,
 					panic("unable to handle non-32 bit registers in arrays:" + def.Name)
 				}
 			}
-			if def.Size != 32 {
-				panic("unable to handle non-32 bit registers:" + def.Name)
-			}
 			p.RegistersWithReserved = append(p.RegistersWithReserved, def)
 		}
 	}
