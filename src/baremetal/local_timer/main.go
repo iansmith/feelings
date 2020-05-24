@@ -95,7 +95,6 @@ var previous uint64
 // print out info about it and lock up.
 //export raw_exception_handler
 func rawExceptionHandler(t uint64, esr uint64, addr uint64, el uint64, procId uint64) {
-
 	if t != 5 {
 		//this is in case we get some OTHER kind of exception
 		c.Logf("raw exception handler:exception type %d and esr %x with addr %x and EL=%d, ProcID=%x\n",
@@ -120,9 +119,6 @@ func rawExceptionHandler(t uint64, esr uint64, addr uint64, el uint64, procId ui
 			c.Logf("!! ignoring spurious interrupt !!")
 		}
 	}
-	// c.Logf("core0 source: %x, id=%d\n", arm64.QuadA7.Core0IRQSource.Get(),
-	// 	machine.Aux.AuxMUIIR.InterruptID())
-
 	//clear timer interrupt
 	machine.QA7.LocalTimerClearReload.SetClear() //weird nomenclature, but correct
 	machine.QA7.LocalTimerClearReload.SetReload()

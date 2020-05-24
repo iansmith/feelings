@@ -43,11 +43,12 @@ operations are available.
 Currently, the two SPI masters are not described in this document.`,
 	AddressBlock: sysdec.AddressBlockDef{BaseAddress: 0x21_5000, Size: 0x68},
 	Register: map[string]*sysdec.RegisterDef{
-		"AuxIRQ": {
-			Description: `The AuxIRQ register is used to check any pending
+		"IRQ": {
+			Description: `The IRQ register is used to check any pending
 interrupts which may be asserted by the three Auxiliary sub blocks.`,
 			AddressOffset: 0x0,
 			Size:          3,
+			Access:        sysdec.Access("r"),
 			Field: map[string]*sysdec.FieldDef{
 				"SPI2": {
 					Description: `If set the SPI 2 module has an interrupt 
@@ -69,9 +70,9 @@ pending.`,
 				},
 			},
 		},
-		"AuxEnb": {
+		"Enable": {
 			Description: `The AUXENB register is used to enable the three modules; 
-UART, SPI1, SPI2. Aux, MU=MinuUART, Enb=Enable`,
+UART, SPI1, SPI2.`,
 			AddressOffset: 0x4,
 			Size:          3,
 			Field: map[string]*sysdec.FieldDef{
@@ -99,7 +100,7 @@ mini UART register access`,
 				},
 			},
 		},
-		"AuxMUIO": {
+		"MUData": {
 			Description: `The AUX_MU_IO_REG register is primary used to write 
 data to and read data from the UART FIFOs. If the DLAB bit in the line 
 control register is set this register gives access to the LS 8 bits of the 
@@ -122,13 +123,13 @@ from the receive FIFO (provided it is not empty)`,
 				},
 			},
 		},
-		"AuxMUIER": {
+		"MUIER": {
 			Description: `The AUX_MU_IER_REG register is primary used to 
 enable interrupts. If the DLAB bit in the line control register is set 
 this register gives access to the MS 8 bits of the baud rate.  Page 12
 of the BCM2835 documentation has numerous mistakes related to this register.
 (Pro Tip: there is easier access to the baud rate register, so don't bother
-with this DLAB bit.) Aux, MU=MinuUART, IER=Interrupt Info Reg.`,
+with this DLAB bit.) Aux, MU=MinuUART, IER=Interrupt Enable Reg.`,
 			AddressOffset: 0x44,
 			Size:          4,
 			Field: map[string]*sysdec.FieldDef{
@@ -160,7 +161,7 @@ clear no receive interrupts are generated.`,
 				},
 			},
 		},
-		"AuxMUIIR": {
+		"MUIIR": {
 			Description: `The AUX_MU_IIR_REG register shows the interrupt 
 status.  It also has two FIFO enable status bits and (when writing) FIFO 
 clear bits. Aux, MU=MinuUART, IIR=Interrupt Info Reg.`,
@@ -208,7 +209,7 @@ is pending`,
 				},
 			},
 		},
-		"AuxMULCR": {
+		"MULCR": {
 			Description: `The AUX_MU_LCR_REG register controls the line data 
 format and gives access to the baudrate register. 
 Aux, MU=MinuUART, LCR=Line Control Register. `,
@@ -235,7 +236,7 @@ actually wrong on this one.  Used the known to work values.`,
 				},
 			},
 		},
-		"AuxMUMCR": {
+		"MUMCR": {
 			Description: `The AUX_MU_MCR_REG register controls the 'modem' 
 signals. Aux, MU=MinuUART, MCR=Modem Control Register.`,
 			AddressOffset: 0x50,
@@ -250,7 +251,7 @@ for auto-flow control. See the Mini Uart Extra Control register description)`,
 				},
 			},
 		},
-		"AuxMULSR": {
+		"MULSR": {
 			Description: `The AUX_MU_LSR_REG register shows the data status.
  Aux, MU=MinuUART, LSR=Line Status Register.`,
 			AddressOffset: 0x54,
@@ -285,7 +286,7 @@ at least 1 symbol.`,
 				},
 			},
 		},
-		"AuxMUMSR": {
+		"MUMSR": {
 			Description: `The AUX_MU_LSR_REG register shows the "modem" status.
  Aux, MU=MinuUART, MSR=Modem Status Register.`,
 			AddressOffset: 0x58,
@@ -312,7 +313,7 @@ UART1_CTS [sic?] pin is high`,
 				},
 			},
 		},
-		"AuxMUCNTL": {
+		"MUCNTL": {
 			Description: `The AUX_MU_CNTL_REG provides access to some extra 
 useful and nice features not found on a normal 16550 UART.  Sometimes this 
 is called the 'extra' control register. "`,
@@ -383,7 +384,7 @@ Any symbols in progress of reception will be finished.`,
 				},
 			},
 		},
-		"AuxMUStat": {
+		"MUStat": {
 			Description: `The AUX_MU_STAT_REG provides a lot of useful 
 information about the internal status of the mini UART not found on a normal 
 16550 UART.  This is sometimes called the "extra" status register. '`,
@@ -476,7 +477,7 @@ FIFO is empty`,
 				},
 			},
 		},
-		"AuxMUBaud": {
+		"MUBaud": {
 			Description: `The AUX_MU_BAUD register allows direct access to the 
 16-bit wide baudrate counter.`,
 			AddressOffset: 0x68,
