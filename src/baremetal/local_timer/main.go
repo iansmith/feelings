@@ -2,6 +2,7 @@ package main
 
 import (
 	"device/arm"
+	"fmt"
 	"golang/bytes"
 	"io"
 	"machine"
@@ -10,31 +11,9 @@ import (
 
 // Globals
 var writer io.Writer
-var c = &ConsoleImpl{}
 var buf bytes.Buffer
 
 const period = 38400000 * 4 //about 10 secs
-
-func printLine() {
-	c.Logf("Line was: %s", buf.String())
-	buf.Reset()
-}
-
-func bufferCharacter(ch uint8) {
-	if ch == 10 {
-		//do nothing
-	} else {
-		if ch == 13 {
-			machine.MiniUART.WriteByte('\n')
-			machine.MiniUART.WriteByte('\r')
-			printLine()
-		} else {
-			machine.MiniUART.WriteByte(ch)
-			buf.WriteByte(ch)
-		}
-	}
-
-}
 
 //go:noinline
 func main() {
@@ -67,7 +46,7 @@ func main() {
 	//enable interrupts
 	arm.Asm("msr daifclr,#2")
 
-	c.Logf("you have about 10 secs to type a line or two (hit return to end line)\n")
+	fmt.Printf("you have about 10 secs to type a line or two (hit return to end line)\n")
 
 	//spinloop, wait
 	for {
@@ -77,18 +56,32 @@ func main() {
 	}
 }
 
-//var target uint32
-//var previousClockValue uint64
-
-//go:noinline
-func badexc(t uint64, esr uint64, addr uint64) {
-	print("bad", t, ",", esr, ",", addr, "\n")
-	for i := 0; i < 10000000000; i++ {
-		arm.Asm("nop")
+func printLine(emitHeader bool) {
+	if emitHeader {
+		fmt.Printf("Line was:")
 	}
+	fmt.Printf("%s\n", buf.String())
+	buf.Reset()
 }
 
-var previous uint64
+func bufferCharacter(ch uint8) {
+	if ch == 10 {
+		//do nothing
+	} else {
+		if ch == 13 {
+			machine.MiniUART.WriteByte('\n')
+			machine.MiniUART.WriteByte('\r')
+			printLine(true)
+		} else {
+			machine.MiniUART.WriteByte(ch)
+			buf.WriteByte(ch)
+		}
+	}
+
+}
+
+//var target uint32
+//var previousClockValue uint64
 
 // All exceptions, no matter their origin come here first.  We check
 // to see if it's one we expect (type 5) and if it is not, we just
@@ -97,9 +90,9 @@ var previous uint64
 func rawExceptionHandler(t uint64, esr uint64, addr uint64, el uint64, procId uint64) {
 	if t != 5 {
 		//this is in case we get some OTHER kind of exception
-		c.Logf("raw exception handler:exception type %d and esr %x with addr %x and EL=%d, ProcID=%x\n",
+		fmt.Printf("raw exception handler:exception type %d and esr %x with addr %x and EL=%d, ProcID=%x\n",
 			t, esr, addr, el, procId)
-		c.Logf("DEADLOOP\n")
+		fmt.Printf("DEADLOOP\n")
 		for {
 			arm.Asm("nop")
 		}
@@ -109,14 +102,14 @@ func rawExceptionHandler(t uint64, esr uint64, addr uint64, el uint64, procId ui
 		bufferCharacter(uint8(value))
 	} else {
 		if machine.QA7.LocalTimerControl.InterruptPendingIsSet() {
-			c.Logf("\nsorry, you are out of time.")
+			fmt.Printf("\nsorry, you are out of time.\n")
 			if buf.Len() > 0 {
-				c.Logf("We had a partial line (%d characters):", buf.Len())
-				printLine()
+				fmt.Printf("We had a partial line (%d characters):", buf.Len())
+				printLine(false)
 			}
 			runtime.Exit()
 		} else {
-			c.Logf("!! ignoring spurious interrupt !!")
+			fmt.Printf("!! ignoring spurious interrupt (not mini uart or local timer) !!")
 		}
 	}
 	//clear timer interrupt
