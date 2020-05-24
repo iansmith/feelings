@@ -381,3 +381,76 @@ func BoardRevisionDecode(s string) string {
 //	current:=runtime.Semihostingv2Call(uint64(runtime.Semihostingv2OpClock), 0)
 //	return current*machine.tickMicros
 //}
+
+//go:noinline
+func printoutException(esr uint64) {
+	exceptionClass := esr >> 26
+	switch exceptionClass {
+	case 0:
+		c.Logf("unknown exception")
+	case 1:
+		c.Logf("trapped WFE or WFI instruction")
+	case 2, 8, 9, 10, 11, 15, 16, 18, 19, 20, 22, 23, 26, 27, 28, 29, 30, 31, 35, 38, 39, 41, 42, 43, 45, 46, 54, 55, 57, 58, 59, 61, 62, 63:
+		c.Logf("unused code!!")
+	case 3:
+		c.Logf("trapped MRRC or MCRR access")
+	case 4:
+		c.Logf("trapped MRRC or MCRR access")
+	case 5:
+		c.Logf("trapped MRC or MCR access")
+	case 6:
+		c.Logf("trapped LDC or STC access")
+	case 7:
+		c.Logf("access to SVE, advanced SIMD or FP functionality")
+	case 12:
+		c.Logf("trapped to MRRC access")
+	case 13:
+		c.Logf("branch target exception")
+	case 14:
+		c.Logf("illegal execution state")
+	case 17:
+		c.Logf("SVC instruction in AARCH32")
+		c.Logf("[", esr&0xffff, "]")
+	case 21:
+		c.Logf("SVC instruction in AARCH64")
+		c.Logf("[", esr&0xffff, "]")
+	case 24:
+		c.Logf("trapped MRS, MSR or System instruction in AARCH64")
+	case 25:
+		c.Logf("access to SVE functionality")
+	case 32:
+		c.Logf("instruction abort from lower exception level")
+	case 33:
+		c.Logf("instruction abort from same exception level")
+	case 34:
+		c.Logf("PC alignment fault")
+	case 36:
+		c.Logf("data abort from lower exception level")
+	case 37:
+		c.Logf("data abort from same exception level")
+	case 40:
+		c.Logf("trapped floating point exception from AARCH32")
+	case 44:
+		c.Logf("trapped floating point exception from AARCH64")
+	case 47:
+		c.Logf("SError exception")
+	case 48:
+		c.Logf("Breakpoint from lower exception level")
+	case 49:
+		c.Logf("Breakpoint from same exception level")
+	case 50:
+		c.Logf("Software step from lower exception level")
+	case 51:
+		c.Logf("Software step from same exception level")
+	case 52:
+		c.Logf("Watchpoint from lower exception level")
+	case 53:
+		c.Logf("Watchpoint from same exception level")
+	case 56:
+		c.Logf("BKPT from AARCH32")
+	case 60:
+		c.Logf("BRK from AARCH64")
+	}
+	c.Logf("\n")
+
+}
