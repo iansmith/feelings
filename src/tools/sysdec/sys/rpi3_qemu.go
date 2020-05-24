@@ -58,6 +58,7 @@ var RPI3Qemu5 = sysdec.DeviceDef{
 		"SOC":         BCM2837, //just for completeness
 		"IC":          IC,
 		"Aux":         Aux,
+		"QA7":         QA7,
 		"SystemTimer": SystemTimerQEMU,
 	},
 	NumCores: 4,
@@ -65,5 +66,6 @@ var RPI3Qemu5 = sysdec.DeviceDef{
 		"IC":          0x3f00_0000,
 		"Aux":         0x3f00_0000,
 		"SystemTimer": 0x3f00_0000,
+		"QA7":         0x4000_0000,
 	},
 }
