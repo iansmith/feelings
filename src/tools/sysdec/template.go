@@ -51,10 +51,9 @@ var deviceTemplateText = `
 {{range $pname,$pdef := .Peripheral}}
 ///////////////////////////////////////////////////////////////////////
 {{$pdef.Description}}
+var {{$pdef.Name}} *{{printf "%sDef" $pdef.Name}} = (*{{printf "%sDef" $pdef.Name}})(unsafe.Pointer(uintptr({{printf "0x%x" .MMIOBase}} + {{printf "0x%x" .AddressBlock.BaseAddress}})))
 
-var {{$pname}} *{{printf "%sDef" $pname}} = (*{{printf "%sDef" $pname}})(unsafe.Pointer(uintptr({{printf "0x%x" .MMIOBase}} + {{printf "0x%x" .AddressBlock.BaseAddress}})))
-
-type {{printf "%sDef" $pname}} struct {
+type {{printf "%sDef" $pdef.Name}} struct {
 	{{- range $rindex, $rdef := $pdef.RegistersWithReserved}}
 		{{if $rdef.IsReserved}}
 			{{$rdef.Name}} volatile.Register32   // 0x{{printf "%x" .AddressOffset }}		

@@ -233,6 +233,9 @@ func GenerateDeviceDecls(device DeviceDef, outTags string, pkg string,
 	fields := []*FieldDef{}
 	for _, p := range device.Peripheral {
 		for regname, reg := range p.Register {
+			if reg.Dim != 0 {
+				reg.Name = strings.TrimSuffix(regname, "[%s]")
+			}
 			for name, f := range reg.Field {
 				f.Name = name
 				f.RegName = regname

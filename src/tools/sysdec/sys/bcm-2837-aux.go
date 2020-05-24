@@ -69,9 +69,9 @@ pending.`,
 				},
 			},
 		},
-		"AuxENB": {
+		"AuxEnb": {
 			Description: `The AUXENB register is used to enable the three modules; 
-UART, SPI1, SPI2. Aux, MU=MinuUART, ENB=Enable`,
+UART, SPI1, SPI2. Aux, MU=MinuUART, Enb=Enable`,
 			AddressOffset: 0x4,
 			Size:          3,
 			Field: map[string]*sysdec.FieldDef{

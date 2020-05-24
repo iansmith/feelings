@@ -62,7 +62,7 @@ type InterruptDef struct {
 }
 
 type RegisterDef struct {
-	Name          string //if set, will be ignored, it is copied from the key in map
+	Name          string //if set in config, will be ignored, it is copied from the key in map
 	Description   string
 	AddressOffset int
 	Size          int

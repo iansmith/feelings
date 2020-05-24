@@ -50,19 +50,21 @@ status bit and the corresponding interrupt request line.`,
 				},
 			},
 		},
-		"SystemTimerLower32": {
+		"LeastSignificant32": {
 			Description: `System Timer Counter Lower 32 bits.The system 
 timer free-running counter lower register is a read-only register that 
 returns the current value of the lower 32-bits of the free running counter.`,
 			AddressOffset: 0x4,
 			Size:          32,
+			Access:        sysdec.Access("r"),
 		},
-		"SystemTimerUpper32": {
+		"MostSignificant32": {
 			Description: `System Timer Counter Upper 32 bits.The system 
 timer free-running counter higher register is a read-only register that 
 returns the current value of the higher 32-bits of the free running counter.`,
 			AddressOffset: 0x8,
 			Size:          32,
+			Access:        sysdec.Access("r"),
 		},
 		"Compare1": {
 			Description: `The system timer compare registers hold 
@@ -74,6 +76,7 @@ four compare registers.  Note: Only two of these timers are actually
 usable`,
 			AddressOffset: 0x10,
 			Size:          32,
+			Access:        sysdec.Access("rw"),
 		},
 		"Compare3": {
 			Description: `The system timer compare registers hold 
@@ -85,6 +88,7 @@ four compare registers.  Note: Only two of these timers are actually
 usable`,
 			AddressOffset: 0x18,
 			Size:          32,
+			Access:        sysdec.Access("rw"),
 		},
 	},
 }

@@ -29,6 +29,7 @@ func runIntermediate(outFile string, tmpDir string, opts *UserOptions) {
 			out = declFile
 		}
 		log.Printf("outputfile is %s", out)
+		log.Printf("intermediate compilation output\n%s", msgs)
 	}
 	if opts.Out == "" {
 		fmt.Println(string(msgs))
@@ -57,6 +58,7 @@ func compileIntermediate(mainFilePath string, tmpDir string, opts *UserOptions) 
 	if opts.Leave {
 		log.Printf("intermediate main file: %s", mainFilePath)
 		log.Printf("intermediate executable: %s", tempOut)
+		log.Printf("intermediate output:\n%s", captured)
 	}
 	return tempOut
 }

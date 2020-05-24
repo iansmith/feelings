@@ -22,3 +22,8 @@ rpi3_qemu.sysdec.go: sysdec sys/rpi3_qemu.go sys/bcm*.go
 	GO111MODULE=off GOPATH=$(FEELINGS) $(FEELINGS)/bin/sysdec -o $(PWD)/tmp/sysdec_out.go $(LEAVE) -t feelings_rpi3_qemu -p machine -b rpi3_qemu sys/rpi3_qemu.go
 	cat tmp/sysdec_out.go |  $(SED) '/^[[:blank:]]*$$/d' | $(SED) 's/^xxxblankxxx//g' | gofmt > rpi3_qemu.sysdec.go
 	rm tmp/sysdec_out.go
+
+clean:
+	GO111MODULE=off GOPATH=$(FEELINGS) go clean ./cmd/sysdec
+	rm -f tmp/int_main.go tmp/sysdec_out.go
+	rm -f rpi3.sysdec.go rpi3.sysdec.go

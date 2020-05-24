@@ -1,0 +1,5 @@
+kernel8.img
+timer
+*.hardware
+.idea
+.gdbinit
