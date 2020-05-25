@@ -1,8 +1,8 @@
 package main
 
 import (
-	"feelings/src/anticipation"
-	arm64 "feelings/src/hardware/arm-cortex-a53"
+	"anticipation"
+	arm64 "hardware/arm-cortex-a53"
 )
 
 type oneLine []uint8

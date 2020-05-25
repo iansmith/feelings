@@ -4,22 +4,21 @@ import (
 	"device/arm"
 	"fmt"
 	"golang/bytes"
-	"io"
 	"machine"
 	"runtime"
 )
 
 // Globals
-var writer io.Writer
 var buf bytes.Buffer
 
+// Constants
 const period = 38400000 * 4 //about 10 secs
 
 //go:noinline
 func main() {
+	//setup the mini uart so you can see output over serial
 	machine.MiniUART = machine.NewUART()
 	machine.MiniUART.Configure(&machine.UARTConfig{RXInterrupt: true})
-	writer = &machine.MiniUARTWriter{}
 
 	//tell the Interrupt controlller what's going on
 	machine.IC.Enable1.SetAux()
