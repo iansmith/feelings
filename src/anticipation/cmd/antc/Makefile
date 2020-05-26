@@ -5,7 +5,7 @@ NAME=antc
 
 # we use the bare metal linker script for the bootloader
 $(NAME): *.go
-	GOPATH=$(FEELINGS) tinygo build -cflags='-g' -target antc_qemu.json -o $(NAME) .
+	GOPATH=$(FEELINGS) tinygo build -cflags='-g' -target rpi3_qemu -o $(NAME) .
 #	clang --target=aarch64-elf -mno-unaligned-access -c -o ../../../../tinygo_conf/assembly/baremetal_boot.o ../../../hardware/arm-cortex-a53/barmetal_boot.S
 #	tinygo build -opt s -cflags='-mno-unaligned-access' -target  ../../../../tinygo_conf/rpi3.json -ldflags='../../../../tinygo_conf/assembly/baremetal_boot.o -T ../../../../tinygo_conf/rpi3.ld' -o antc .
 
