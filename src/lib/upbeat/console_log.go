@@ -1,10 +1,10 @@
-package videocore
+package upbeat
 
 import (
-	"feelings/src/golang/fmt"
-	"feelings/src/lib/trust"
-	rt "feelings/src/tinygo_runtime"
+	"fmt"
 	"unsafe"
+
+	"lib/trust"
 )
 
 //go:extern _binary_font_psf_start
@@ -23,14 +23,13 @@ type PCScreenFont struct {
 }
 
 func NewConsoleLogger() *trust.Logger {
-
 	//info := SetFramebufferRes1920x1200()
 	//if info == nil {
 	//	rt.Abort("giving up")
 	//}
 	info := SetFramebufferRes1024x768()
 	if info == nil {
-		rt.Abort("can't set the screen resolution")
+		panic("can't set the screen resolution")
 	}
 
 	console := NewFBConsole(info, (*PCScreenFont)(unsafe.Pointer(&binary_font_psf_start)))

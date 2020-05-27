@@ -1,18 +1,15 @@
-package videocore
+package upbeat
 
 import (
-	"feelings/src/hardware/rpi"
-	"feelings/src/lib/semihosting"
-	"feelings/src/lib/trust"
 	"fmt"
 	"unsafe"
 
-	"github.com/tinygo-org/tinygo/src/device/arm"
+	"device/arm"
+	"lib/trust"
+	"machine"
 
-	"github.com/tinygo-org/tinygo/src/runtime/volatile"
+	"tinygo_runtime/volatile"
 )
-
-var Mailbox *MailboxRegisterMap = (*MailboxRegisterMap)(unsafe.Pointer(rpi.MemoryMappedIO + 0x0000B880))
 
 const MailboxFull = 0x80000000
 const MailboxEmpty = 0x40000000
@@ -73,26 +70,22 @@ func Call(ch uint8, mboxBuffer *sequenceOfSlots) bool {
 	mask := uintptr(^uint64(0xf))
 	rawPtr := uintptr(unsafe.Pointer(mboxBuffer))
 	if rawPtr&0xf != 0 {
-		semihosting.Exit(7)
+		panic("pointer to mailbox buffer must be 16 byte aligned")
 	}
 	addrWithChannel := (uintptr(unsafe.Pointer(rawPtr)) & mask) | uintptr(ch&0xf)
 	for {
-		if Mailbox.Status.HasBits(MailboxFull) {
+		if machine.GPUMailbox.Status.FullIsSet() {
 			arm.Asm("nop")
 		} else {
 			break
 		}
 	}
-	Mailbox.Write.Set(uint32(addrWithChannel))
-	//for i := 0; i < 20; i++ {
-	//	happiness.Console.Logf("%x,%x\n	", rawPtr, addrWithChannel)
-	//}
-	//happiness.Console.Logf("wasting time so the mailbox won't feel in a hurry...")
+	machine.GPUMailbox.Write.Set(uint32(addrWithChannel))
 	for {
-		if Mailbox.Status.HasBits(MailboxEmpty) {
+		if machine.GPUMailbox.Status.EmptyIsSet() {
 			arm.Asm("nop")
 		} else {
-			read := Mailbox.Read.Get()
+			read := machine.GPUMailbox.Receive.Get()
 			if read == uint32(addrWithChannel) {
 				//did we get a confirm?
 				return mboxBuffer.s[1].Get() == MailboxResponse

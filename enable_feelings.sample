@@ -1,0 +1,15 @@
+# adjust the lines below for your system
+# and then source this file anytime you plan to work with feelings
+
+BASE=/Users/iansmith/rpi3                    #if you keep it all together
+GO114=/Users/iansmith/.enable/go1.14.1.src/  #for build tools on host, like sysdec
+TOOLS=$BASE/gnu/bin                          #debugger, qemu
+TINYGO=$BASE/tinygo                          #where tinygo in installed
+FEELINGS=/Users/iansmith/feelings            #where feelings is installed
+
+export PATH=$TOOLS:\
+/usr/local/bin:/usr/bin:/bin:/usr/sbin:\
+/sbin:$TINYGO/build:\
+$FEELINGS/bin:\
+$GO114/bin
+
