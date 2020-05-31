@@ -1,9 +1,10 @@
 package happiness
 
 import (
-	"feelings/src/hardware/rpi"
 	"unsafe"
 )
+
+const MemoryMappedIO = 0x3F00_0000
 
 //
 // CPUContext
@@ -93,7 +94,7 @@ const SectionShift = PageShift + TableShift
 const PageSize = 1 << PageShift
 const SectionSize = 1 << SectionShift
 const LowMemory = 2 * SectionSize
-const HighMemory = uint64(rpi.MemoryMappedIO)
+const HighMemory = uint64(MemoryMappedIO)
 const PagingMemory = HighMemory - LowMemory
 const PagingPages = PagingMemory / PageSize
 

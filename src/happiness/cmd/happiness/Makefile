@@ -1,9 +1,31 @@
-all: clean happiness
+all: clean kernel8.img kernel8.img.hardware
 
-happiness: *.go ../../../../tinygo_conf/assembly/kernel_start.o
-	clang --target=aarch64-elf -c -o ../../../../tinygo_conf/assembly/kernel_start.o ../../../hardware/arm-cortex-a53/kernel_start.S
-	tinygo build  -target ../../../../tinygo_conf/rpi3.json -ldflags='-T ../../../../tinygo_conf/kernel.ld ../../../../tinygo_conf/assembly/kernel_start.o' -o happiness .
+FEELINGS=/Users/iansmith/feelings
+NAME=happiness
+
+$(NAME): *.go
+	GOPATH=$(FEELINGS) tinygo build -cflags='-g' -target $(NAME)_qemu.json -o $(NAME) .
+
+$(NAME).hardware: *.go
+	GOPATH=$(FEELINGS) tinygo build -target $(NAME).json -o $(NAME).hardware .
 
 clean:
-	rm happiness *.o >/dev/null 2>/dev/null || true
+	rm kernel8.img $(NAME) $(NAME).hardware kernel8.img.hardware *.o >/dev/null 2>/dev/null || true
 
+kernel8.img: $(NAME)
+	llvm-objcopy -O binary $(NAME) kernel8.img
+
+kernel8.img.hardware: $(NAME).hardware
+	llvm-objcopy -O binary $(NAME).hardware kernel8.img.hardware
+
+run:
+	qemu-system-aarch64 -M raspi3 -kernel $(NAME) -serial null -serial chardev:char0 \
+ 		-d unimp,cpu_reset,guest_errors -semihosting -semihosting-config enable=on,target=native \
+ 		--chardev pty,path=/dev/ttys009,mux=on,id=char0
+
+debug:
+	qemu-system-aarch64 \
+		-M raspi3 -S -s \
+		-kernel $(NAME) \
+		-semihosting -semihosting-config enable=on,target=native \
+		-serial null -serial stdio

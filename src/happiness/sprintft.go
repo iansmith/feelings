@@ -1,7 +1,7 @@
 package happiness
 
 import (
-	rt "feelings/src/tinygo_runtime"
+	"machine"
 )
 
 // tricky: you can't use testing.T here because of the all the linker and assembly
@@ -37,8 +37,7 @@ func TestSprintfGoodCases() bool {
 
 func checkEquality(formatted string, expected string) bool {
 	if formatted != expected {
-		rt.MiniUART.WriteString("expected '" + expected + "' but got '" + formatted + "'")
-		rt.MiniUART.WriteCR()
+		machine.MiniUART.WriteString("expected '" + expected + "' but got '" + formatted + "'\n")
 		return false
 	}
 	return true

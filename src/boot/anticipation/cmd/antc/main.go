@@ -1,13 +1,14 @@
 package main
 
 import (
-	"anticipation"
+	"boot/anticipation"
 	"device/arm"
-	arm64 "hardware/arm-cortex-a53"
-	"machine"
-
 	"errors"
 	"fmt"
+	"lib/trust"
+	"lib/upbeat"
+	"log"
+	"machine"
 	"unsafe"
 )
 
@@ -40,7 +41,6 @@ func main() {
 	//setup the mini uart so you can see output over serial
 	machine.MiniUART = machine.NewUART()
 	machine.MiniUART.Configure(&machine.UARTConfig{RXInterrupt: true})
-	machine.MiniUART.WriteByte('X')
 	//tell the Interrupt controlller what's going on
 	machine.IC.Enable1.SetAux()
 
@@ -56,16 +56,18 @@ func main() {
 	machine.QA7.TimerInterruptControl[0].SetPhysicalNonSecureTimerIRQ()
 	machine.QA7.IRQSource[0].SetGPU()
 
-	arm64.UnmaskDAIF()
+	displayInfo()
+
+	upbeat.UnmaskDAIF()
 	for {
-		arm64.MaskDAIF()
+		upbeat.MaskDAIF()
 		if started {
 			//we leave this loop with interrupts OFF
 			break
 		}
-		arm64.UnmaskDAIF()
+		upbeat.UnmaskDAIF()
 		wait()
-		arm64.MaskDAIF()
+		upbeat.MaskDAIF()
 	}
 
 	// we ignore errors because we are running on baremetal and there is literally
@@ -85,9 +87,9 @@ func main() {
 		}
 		done, err := processLine(s)
 		if err != nil {
-			fmt.Printf("!" + err.Error())
+			machine.MiniUART.WriteString("! processing error:" + err.Error() + "\n")
 		} else {
-			fmt.Printf(".\n")
+			machine.MiniUART.WriteString(".\n")
 		}
 		if done {
 			break
@@ -112,7 +114,6 @@ func rawExceptionHandler(t uint64, esr uint64, addr uint64, el uint64, procId ui
 
 //go:noinline
 func interruptReceive() {
-	//fmt.Printf("interruptReceive\n")
 	atLeastOne := true
 	for atLeastOne {
 		atLeastOne = false
@@ -124,10 +125,13 @@ func interruptReceive() {
 				if !machine.Aux.MULSR.DataReadyIsSet() {
 					break
 				}
-				fmt.Printf("got a miniuart interrupt\n")
 				//this is slightly dodgy, but since interrupts are off, it's ok
 				if !started {
 					started = true
+				} else {
+					//reset watchdog timer
+					machine.QA7.LocalTimerClearReload.SetReload()
+					machine.QA7.LocalTimerClearReload.SetClear() //sad nomenclature
 				}
 				//pull the character into the internal buffer
 				ch := byte(machine.Aux.MUData.Receive())
@@ -136,27 +140,43 @@ func interruptReceive() {
 					machine.MiniUART.LoadRx(10)
 					moved := machine.MiniUART.CopyRxBuffer(buffer)
 					lr.addLineToRing(string(buffer[:moved]))
-				case ch < 32:
+				case ch < 32 || ch > 127:
 					//nothing
 				default:
 					machine.MiniUART.LoadRx(ch) //put it in the receive buffer
 				}
 			}
 		case machine.QA7.LocalTimerControl.InterruptPendingIsSet():
-			fmt.Printf("got a timer interrupt\n")
+			//we really should do a lock here but becase we are running
+			//on bare metal, we'll get away with this read of a shared
+			//variable
+			waitCount++
 			atLeastOne = true
-			machine.QA7.LocalTimerClearReload.SetClear()
+			if started {
+				log.Printf("___________WATCHDOG! __________\n")
+				machine.MiniUART.WriteString("! watchdog timeout during transfer\n")
+			} else {
+				log.Printf("local timer interrupt: #%03d", waitCount)
+				machine.MiniUART.WriteString(fmt.Sprintf(". local timer interrupt: #%03d\n", waitCount))
+			}
+			machine.QA7.LocalTimerClearReload.SetClear() //ugh, nomenclature
 			machine.QA7.LocalTimerClearReload.SetReload()
 		}
 	}
 }
 
+var waitCount = 0
+
 func processLine(line string) (bool, error) {
+	//really should do a lock here, but on baremetal will be ok
+	waitCount = 0
+
 	//clip off the LF that came from server
 	end := len(line)
 	if end > 0 && line[end-1] == 10 {
 		end--
 	}
+
 	//just do what the line says
 	converted, lt, _, err := anticipation.DecodeAndCheckStringToBytes(line[:end])
 	if err != nil {
@@ -164,15 +184,17 @@ func processLine(line string) (bool, error) {
 	}
 	wasError, done := anticipation.ProcessLine(lt, converted, metal)
 	if wasError {
-		return false, errors.New("unable to excute line " + line)
+		return false, errors.New("unable to execute line " + line)
 	}
 	if done {
 		if !metal.EntryPointIsSet() {
 			return false, errors.New("no entry point has been set")
 		}
-		fmt.Sprintf((".\n")) //signal the sender everything is ok
+		// normally our CALLER does the confirm, but we are never going to
+		// reach there
+		machine.MiniUART.WriteString(".\n") //signal the sender everything is ok
 		fmt.Printf("@ jumping to address %x\n", metal.EntryPoint())
-		arm64.MaskDAIF() //turn off interrupts while we boot up the kernel
+		upbeat.MaskDAIF() //turn off interrupts while we boot up the kernel
 		ut := metal.UnixTime()
 		ep := metal.EntryPoint()
 		jumpToNewKernel(ut, ep)
@@ -188,4 +210,63 @@ func jumpToNewKernel(ut uint32, ep uint32) {
 	arm.Asm("mov x23, #0")
 	arm.Asm("mov x8, x20")
 	arm.Asm("br x8")
+}
+
+func displayInfo() {
+	var size, base uint32
+
+	// info := videocore.SetFramebufferRes1920x1200()
+	// if info == nil {
+	//      rt.Abort("giving up")
+	// }
+	info := upbeat.SetFramebufferRes1024x768()
+	if info == nil {
+		fmt.Printf("can't set the framebuffer, aborting\n")
+		machine.Abort()
+	}
+
+	logger = trust.NewLogger(trust.LogSink())
+
+	id, ok := upbeat.BoardID()
+	if ok == false {
+		fmt.Printf("can't get board id, aborting\n")
+		machine.Abort()
+	}
+	logger.Infof("board id         : %016x\n", id)
+
+	v, ok := upbeat.FirmwareVersion()
+	if ok == false {
+		fmt.Printf("can't get firmware version id, aborting\n")
+		machine.Abort()
+	}
+	logger.Infof("firmware version : %08x\n", v)
+
+	rev, ok := upbeat.BoardRevision()
+	if ok == false {
+		fmt.Printf("can't get board revision id, aborting\n")
+		return
+	}
+	logger.Infof("board revision   : %08x %s\n", rev, upbeat.BoardRevisionDecode(fmt.Sprintf("%x", rev)))
+
+	cr, ok := upbeat.GetClockRate()
+	if ok == false {
+		fmt.Printf("can't get clock rate, aborting\n")
+		machine.Abort()
+
+	}
+	logger.Infof("clock rate       : %d hz\n", cr)
+
+	base, size, ok = upbeat.GetARMMemoryAndBase()
+	if ok == false {
+		fmt.Printf("can't get arm memory, aborting\n")
+		machine.Abort()
+	}
+	logger.Infof("ARM Memory       : 0x%x bytes @ 0x%x\n", size, base)
+
+	base, size, ok = upbeat.GetVCMemoryAndBase()
+	if ok == false {
+		fmt.Printf("can't get vc memory, aborting\n")
+		machine.Abort()
+	}
+	logger.Infof("VidCore IV Memory: 0x%x bytes @ 0x%x\n", size, base)
 }

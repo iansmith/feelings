@@ -2,3 +2,5 @@ antc
 kernel8.img
 .gdbinit
 *.hardware
+kernel8.img.hardware
+antc.hardware

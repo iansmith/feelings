@@ -1,12 +1,13 @@
 package upbeat
 
 import (
-	"machine"
 	"unsafe"
+
+	"machine"
 )
 
-// U
-func (uart *machine.UART) Hex32string(d uint32) {
+// Hex32string is for dumping a 32bit int without using fmt
+func Hex32string(uart *machine.UART, d uint32) {
 	var rb uint32
 	var rc uint32
 
@@ -27,7 +28,8 @@ func (uart *machine.UART) Hex32string(d uint32) {
 	uart.WriteByte(0x20)
 }
 
-func (uart *machine.UART) Hex64string(d uint64) {
+// Hex32string is for dumping a 64bit int without using fmt
+func Hex64string(uart *machine.UART, d uint64) {
 	var rb uint64
 	var rc uint64
 
@@ -48,16 +50,14 @@ func (uart *machine.UART) Hex64string(d uint64) {
 	uart.WriteByte(0x20)
 }
 
-/**
- * Dump memory
- */
-func (u *machine.UART) Dump(ptr unsafe.Pointer) {
+// Dump sends 512 bytes of ram to UART without using fmt
+func DumpMemory(u *machine.UART, ptr unsafe.Pointer) {
 	var a, b uint64
 	var d byte
 	var c byte
 
 	for a = uint64(uintptr(ptr)); a < uint64(uintptr(ptr))+512; a += 16 {
-		u.Hex32string(uint32(a))
+		Hex32string(u, uint32(a))
 		u.WriteString(": ")
 		for b = 0; b < 16; b++ {
 			c = *((*byte)(unsafe.Pointer(uintptr(a + b))))
@@ -91,6 +91,6 @@ func (u *machine.UART) Dump(ptr unsafe.Pointer) {
 				u.WriteByte(c)
 			}
 		}
-		u.WriteCR()
+		u.WriteByte(10)
 	}
 }

@@ -1,0 +1,6 @@
+{
+  "inherits": [
+    "rpi3_qemu"
+  ],
+  "linkerscript": "happiness.ld"
+}

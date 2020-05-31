@@ -1,10 +1,10 @@
 package happiness
 
 import (
-	"feelings/src/golang/strconv"
-	"feelings/src/hardware/bcm2835"
-	rt "feelings/src/tinygo_runtime"
 	"reflect"
+	"strconv"
+
+	"machine"
 )
 
 var Console ConsoleInterface = &ConsoleImpl{}
@@ -21,9 +21,9 @@ func (c *ConsoleImpl) Logf(format string, values ...interface{}) {
 	if format == "" {
 		return
 	}
-	rt.MiniUART.WriteString(c.Sprintf(format, values...))
+	machine.MiniUART.WriteString(c.Sprintf(format, values...))
 	if format[len(format)-1] != '\n' {
-		rt.MiniUART.WriteCR()
+		machine.MiniUART.WriteByte(10)
 	}
 }
 
@@ -204,25 +204,4 @@ func snarfSpecifier(s string, start int) (uint8, string, bool) {
 		}
 	}
 	return keychar, qualifier, completed
-}
-
-//
-// SysTimer gets the 64 bit timer's value.
-//
-//go:export SystemTime()
-func SystemTime() uint64 {
-	h := uint32(0xffffffff)
-	var l uint32
-
-	// the reads from system timer are two separate 32 bit reads
-	h = bcm2835.SysTimer.FreeRunningLower32.Get()
-	l = bcm2835.SysTimer.FreeRunningHigher32.Get()
-	//the read of hi can fail
-	again := bcm2835.SysTimer.FreeRunningHigher32.Get()
-	if h != again {
-		h = bcm2835.SysTimer.FreeRunningHigher32.Get()
-		l = bcm2835.SysTimer.FreeRunningLower32.Get()
-	}
-	high := uint64(h << 32)
-	return high | uint64(l)
 }

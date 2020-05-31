@@ -1,0 +1,6 @@
+{
+  "inherits": [
+    "rpi3"
+  ],
+  "linkerscript":  "antc.ld"
+}

@@ -7,7 +7,7 @@ import (
 )
 
 //neds to be all 1s on right, can't be larger than 255
-const FileXFerDataLineSize = uint16(0x3f)
+const FileXFerDataLineSize = uint16(0x7f)
 
 type EncodeDecodeError struct {
 	s string

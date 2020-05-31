@@ -1,8 +1,9 @@
 package trust
 
 import (
-	"feelings/src/golang/fmt"
-	"feelings/src/lib/semihosting"
+	"fmt"
+
+	tgr "runtime"
 )
 
 // Default Logger points to the UART that is the primary output for the kernel log messages.
@@ -142,7 +143,7 @@ func Fatalf(exitCode int, format string, params ...interface{}) {
 }
 func (l *Logger) Fatalf(exitCode int, format string, params ...interface{}) {
 	l.logf(fatalMask, format, params...)
-	semihosting.Exit(uint64(exitCode))
+	tgr.Exit()
 }
 
 //Errorf prints the given log message (format + params) using the ErrorMask level.

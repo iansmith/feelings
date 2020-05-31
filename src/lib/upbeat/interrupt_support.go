@@ -1,6 +1,9 @@
 package upbeat
 
-import "lib/trust"
+import (
+	"device/arm"
+	"lib/trust"
+)
 
 func BoardRevisionDecode(s string) string {
 	switch s {
@@ -104,6 +107,15 @@ func PrintoutException(esr uint64, c trust.Logger) {
 	case 60:
 		c.Errorf("BRK from AARCH64")
 	}
-	c.Logf("\n")
 
+}
+
+// MaskDAIF sets the value of the four D-A-I-F interupt masking on the ARM
+func MaskDAIF() {
+	arm.Asm("msr    daifset, #0x3") // IRQ + FIQ
+}
+
+// UnmaskDAIF sets the value of the four D-A-I-F interupt masking on the ARM
+func UnmaskDAIF() {
+	arm.Asm("msr    daifclr, #0x3") // IRQ + FIQ
 }

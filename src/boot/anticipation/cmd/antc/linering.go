@@ -1,8 +1,8 @@
 package main
 
 import (
-	"anticipation"
-	arm64 "hardware/arm-cortex-a53"
+	"boot/anticipation"
+	"lib/upbeat"
 )
 
 type oneLine []uint8
@@ -41,9 +41,9 @@ func (l *lineRing) empty() bool {
 func (l *lineRing) next(buffer []uint8) string {
 	for {
 		if l.empty() {
-			arm64.UnmaskDAIF()
+			upbeat.UnmaskDAIF()
 			wait()
-			arm64.MaskDAIF()
+			upbeat.MaskDAIF()
 		} else {
 			break // can only get here with interrupts masked
 		}

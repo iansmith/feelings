@@ -8,7 +8,7 @@ import (
 	"lib/trust"
 	"machine"
 
-	"tinygo_runtime/volatile"
+	"runtime/volatile"
 )
 
 const MailboxFull = 0x80000000
