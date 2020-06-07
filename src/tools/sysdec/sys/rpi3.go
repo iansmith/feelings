@@ -61,7 +61,7 @@ var RPI3 = sysdec.DeviceDef{
 		"Aux":         0x3f00_0000,
 		"SystemTimer": 0x3f00_0000,
 		"QA7":         0x4000_0000,
-		"GPUMailbox":  0x4000_0000,
+		"GPUMailbox":  0x3f00_0000,
 		"GPIO":        0x3f00_0000,
 	},
 }

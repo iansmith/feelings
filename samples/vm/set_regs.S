@@ -8,7 +8,6 @@
 //x3 is 4th param, ttbr0
 //x4 is 5th param, ttbr1
 _enable_mmu_tables:
-	dsb sy
 
 	//Set the memattrs values into mair_el1
     msr mair_el1, x0
@@ -23,12 +22,13 @@ _enable_mmu_tables:
 	isb
 
 	mrs x0, sctlr_el1
-	//mov x1, x2 //we've already use x1, can destry
+	mov x1, x2 //we've already use x1, can destry
 	orr x0, x0, x2
 	msr sctlr_el1, x0
 
-    nop
-    nop
-    nop
-    nop
+	isb
+//    nop
+//    nop
+//   nop
+//  nop
 	ret

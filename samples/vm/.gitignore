@@ -1,3 +1,5 @@
 font.o
 vm
 kernel8.img
+kernel8.img.hardware
+vm.hardware

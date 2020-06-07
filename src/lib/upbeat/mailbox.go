@@ -47,16 +47,6 @@ const MailboxTagSetPixelOrder = 0x48006
 const MailboxTagGetFramebuffer = 0x40001
 const MailboxTagGetPitch = 0x40008
 
-type MailboxRegisterMap struct {
-	Read     volatile.Register32    //0x00
-	reserved [3]volatile.Register32 //0x04-0x10
-	Poll     volatile.Register32    //0x10
-	Sender   volatile.Register32    // 0x14
-	Status   volatile.Register32    // 0x18
-	Config   volatile.Register32    //0x1c
-	Write    volatile.Register32    //0x20
-}
-
 type FrameBufferInfo struct {
 	Buffer *byte
 	Width  uint32
@@ -328,6 +318,7 @@ func setFramebufferRes(widthPixels uint32, heightPixels uint32) *FrameBufferInfo
 	mbox.s[33].Set(0) //Pitch
 
 	mbox.s[34].Set(MailboxTagLast) //we are done here
+
 	if !Call(MailboxChannelProperties, mbox) {
 		trust.Errorf("unable to send commands to mailbox for framebuffer setup")
 		return nil
@@ -346,5 +337,6 @@ func setFramebufferRes(widthPixels uint32, heightPixels uint32) *FrameBufferInfo
 	result.Height = mbox.s[6].Get()
 	result.Pitch = mbox.s[33].Get()
 	result.Buffer = (*byte)(unsafe.Pointer(uintptr(mbox.s[28].Get())))
+
 	return result
 }

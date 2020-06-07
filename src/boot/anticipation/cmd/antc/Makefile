@@ -2,12 +2,16 @@ all: clean kernel8.img kernel8.img.hardware
 
 FEELINGS=/Users/iansmith/feelings
 NAME=antc
+FONTDIR=$(FEELINGS)/src/lib/upbeat
 
-$(NAME): *.go
-	GOPATH=$(FEELINGS) tinygo build -cflags='-g' -target $(NAME)_qemu.json -o $(NAME) .
+$(FONTDIR)/font.o: $(FONTDIR)/font.psf
+	ld.lld -m aarch64elf -r -b binary -o $(FONTDIR)/font.o $(FONTDIR)/font.psf
 
-$(NAME).hardware: *.go
-	GOPATH=$(FEELINGS) tinygo build -target $(NAME).json -o $(NAME).hardware .
+$(NAME): *.go $(FONTDIR)/font.o
+	GOPATH=$(FEELINGS) tinygo build -ldflags='$(FONTDIR)/font.o' -cflags='-g' -target $(NAME)_qemu.json -o $(NAME) .
+
+$(NAME).hardware: *.go $(FONTDIR)/font.o
+	GOPATH=$(FEELINGS) tinygo build  -ldflags='$(FONTDIR)/font.o' -target $(NAME).json -o $(NAME).hardware .
 
 clean:
 	rm kernel8.img $(NAME) $(NAME).hardware kernel8.img.hardware *.o >/dev/null 2>/dev/null || true

@@ -5,7 +5,6 @@ import (
 	"device/arm"
 	"errors"
 	"fmt"
-	"lib/trust"
 	"lib/upbeat"
 	"log"
 	"machine"
@@ -215,18 +214,19 @@ func jumpToNewKernel(ut uint32, ep uint32) {
 func displayInfo() {
 	var size, base uint32
 
-	// info := videocore.SetFramebufferRes1920x1200()
+	// info := upbeat.SetFramebufferRes1920x1200()
 	// if info == nil {
-	//      rt.Abort("giving up")
+	// 	panic("giving up, can't set framebuffer res")
 	// }
-	info := upbeat.SetFramebufferRes1024x768()
-	if info == nil {
-		fmt.Printf("can't set the framebuffer, aborting\n")
-		machine.Abort()
-	}
 
-	logger = trust.NewLogger(trust.LogSink())
+	// info := upbeat.SetFramebufferRes1024x768()
+	// if info == nil {
+	// 	panic("can't set the framebuffer res")
+	// 	machine.Abort()
+	// }
 
+	logger := upbeat.NewConsoleLogger()
+	//
 	id, ok := upbeat.BoardID()
 	if ok == false {
 		fmt.Printf("can't get board id, aborting\n")
