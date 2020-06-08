@@ -55,8 +55,6 @@ func main() {
 	machine.QA7.TimerInterruptControl[0].SetPhysicalNonSecureTimerIRQ()
 	machine.QA7.IRQSource[0].SetGPU()
 
-	displayInfo()
-
 	upbeat.UnmaskDAIF()
 	for {
 		upbeat.MaskDAIF()
@@ -209,64 +207,4 @@ func jumpToNewKernel(ut uint32, ep uint32) {
 	arm.Asm("mov x23, #0")
 	arm.Asm("mov x8, x20")
 	arm.Asm("br x8")
-}
-
-func displayInfo() {
-	var size, base uint32
-
-	// info := upbeat.SetFramebufferRes1920x1200()
-	// if info == nil {
-	// 	panic("giving up, can't set framebuffer res")
-	// }
-
-	// info := upbeat.SetFramebufferRes1024x768()
-	// if info == nil {
-	// 	panic("can't set the framebuffer res")
-	// 	machine.Abort()
-	// }
-
-	logger := upbeat.NewConsoleLogger()
-	//
-	id, ok := upbeat.BoardID()
-	if ok == false {
-		fmt.Printf("can't get board id, aborting\n")
-		machine.Abort()
-	}
-	logger.Infof("board id         : %016x\n", id)
-
-	v, ok := upbeat.FirmwareVersion()
-	if ok == false {
-		fmt.Printf("can't get firmware version id, aborting\n")
-		machine.Abort()
-	}
-	logger.Infof("firmware version : %08x\n", v)
-
-	rev, ok := upbeat.BoardRevision()
-	if ok == false {
-		fmt.Printf("can't get board revision id, aborting\n")
-		return
-	}
-	logger.Infof("board revision   : %08x %s\n", rev, upbeat.BoardRevisionDecode(fmt.Sprintf("%x", rev)))
-
-	cr, ok := upbeat.GetClockRate()
-	if ok == false {
-		fmt.Printf("can't get clock rate, aborting\n")
-		machine.Abort()
-
-	}
-	logger.Infof("clock rate       : %d hz\n", cr)
-
-	base, size, ok = upbeat.GetARMMemoryAndBase()
-	if ok == false {
-		fmt.Printf("can't get arm memory, aborting\n")
-		machine.Abort()
-	}
-	logger.Infof("ARM Memory       : 0x%x bytes @ 0x%x\n", size, base)
-
-	base, size, ok = upbeat.GetVCMemoryAndBase()
-	if ok == false {
-		fmt.Printf("can't get vc memory, aborting\n")
-		machine.Abort()
-	}
-	logger.Infof("VidCore IV Memory: 0x%x bytes @ 0x%x\n", size, base)
 }

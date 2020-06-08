@@ -1,4 +1,4 @@
-package happiness
+package joy
 
 import (
 	"reflect"

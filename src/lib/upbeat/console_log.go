@@ -22,16 +22,7 @@ type PCScreenFont struct {
 	Width         uint32
 }
 
-func NewConsoleLogger() *trust.Logger {
-	//info := SetFramebufferRes1920x1200()
-	//if info == nil {
-	//	rt.Abort("giving up")
-	//}
-	info := SetFramebufferRes1024x768()
-	if info == nil {
-		panic("can't set the screen resolution")
-	}
-
+func NewConsoleLogger(info *FrameBufferInfo) *trust.Logger {
 	console := NewFBConsole(info, (*PCScreenFont)(unsafe.Pointer(&binary_font_psf_start)))
 	return trust.NewLogger(console)
 

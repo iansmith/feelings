@@ -1,0 +1,8 @@
+{
+  "inherits": [
+    "rpi3_qemu"
+  ],
+  "linkerscript": "joy.ld",
+  "extra-files": [
+  ]
+}

@@ -1,6 +1,0 @@
-{
-  "inherits": [
-    "rpi3"
-  ],
-  "linkerscript":  "happiness.ld"
-}

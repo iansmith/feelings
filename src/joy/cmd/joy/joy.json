@@ -1,0 +1,8 @@
+{
+  "inherits": [
+    "rpi3"
+  ],
+  "linkerscript":  "joy.ld",
+  "extra-files": [
+  ]
+}

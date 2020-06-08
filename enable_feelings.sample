@@ -1,16 +1,20 @@
 # adjust the lines below for your system
 # and then source this file anytime you plan to work with feelings
 
-BASE=/Users/iansmith/rpi3                       #if you keep it all together
-GO114=/Users/iansmith/.enable/go1.14.1.src      #for build tools on host, like sysdec
-TOOLS=$BASE/aarch64/bin                         #debugger, qemu
-TINYGO=$BASE/tinygo                             #where tinygo in installed
-FEELINGS=/Users/iansmith/feelings               #where feelings is installed
-LLVM=$TINYGO/llvm-build                         #binutils for llvm, like objcopy
+BASE=/Users/iansmith/rpi3                              #if you keep it all together
+export HOSTGO=/Users/iansmith/.enable/go1.14.1.src     #for build tools on host, like sysdec
+TOOLS=$BASE/aarch64/bin                                #debugger, qemu
 
+export TINYGO=$BASE/tinygo                      #where tinygo in installed
+export FEELINGS=/Users/iansmith/feelings        #where feelings is installed
+export LLVM=$TINYGO/llvm-build/                 #llvm binaries, like objcopy or clang
+                                                #it's best to use one included with tinygo
+
+#try not to put much in your path. we try not to use the path, but we might
+#have a ref to it and you dont want "clang" to refer to something unexpected.
 export PATH=$TOOLS:\
-/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:\
 $TINYGO/build:\
 $FEELINGS/bin:\
 $LLVM/bin:\
-$GO114/bin
+$HOSTGO/bin:\
+/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:

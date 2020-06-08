@@ -4,3 +4,4 @@ kernel8.img
 *.hardware
 kernel8.img.hardware
 antc.hardware
+*.o

@@ -1,26 +1,49 @@
 all: clean kernel8.img kernel8.img.hardware
 
-FEELINGS=/Users/iansmith/feelings
+ifndef FEELINGS
+$(error FEELINGS variable is not set, see enable-feelings.sample)
+endif
+ifndef TINYGO
+$(error TINYGO variable is not set, see enable-feelings.sample)
+endif
+ifndef LLVM
+$(error LLVM variable is not set, see enable-feelings.sample)
+endif
+ifndef HOSTGO
+$(error HOSTGO variable is not set, see enable-feelings.sample)
+endif
+
 NAME=antc
+TINYGO_CLANG=$(LLVM)/bin/clang
+TINYGO_OBJCOPY=$(LLVM)/bin/llvm-objcopy
+TINYGO_LLD=$(LLVM)/bin/ll.lld
+TINYGO_TINYGO=$(TINYGO)/build/tinygo
+
 FONTDIR=$(FEELINGS)/src/lib/upbeat
+BOOTASM=rpi3_baremetal_boot
+BOOTLIB=$(FEELINGS)/src/boot/lib
+TARGET=aarch64-none-elf
+
+$(BOOTASM).o: $(BOOTLIB)/$(BOOTASM).S
+	$(TINYGO_CLANG) -target $(TARGET) -c -o $(BOOTASM).o $(BOOTLIB)/$(BOOTASM).S
 
 $(FONTDIR)/font.o: $(FONTDIR)/font.psf
-	ld.lld -m aarch64elf -r -b binary -o $(FONTDIR)/font.o $(FONTDIR)/font.psf
+	$(TINYGO_LLD)-m aarch64elf -r -b binary -o $(FONTDIR)/font.o $(FONTDIR)/font.psf
 
-$(NAME): *.go $(FONTDIR)/font.o
-	GOPATH=$(FEELINGS) tinygo build -ldflags='$(FONTDIR)/font.o' -cflags='-g' -target $(NAME)_qemu.json -o $(NAME) .
+$(NAME): *.go $(FONTDIR)/font.o $(BOOTASM).o
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='$(FONTDIR)/font.o  $(BOOTASM).o' -cflags='-g' -target $(NAME)_qemu.json -o $(NAME) .
 
-$(NAME).hardware: *.go $(FONTDIR)/font.o
-	GOPATH=$(FEELINGS) tinygo build  -ldflags='$(FONTDIR)/font.o' -target $(NAME).json -o $(NAME).hardware .
+$(NAME).hardware: *.go $(FONTDIR)/font.o $(BOOTASM).o
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build  -ldflags='$(FONTDIR)/font.o  $(BOOTASM).o' -target $(NAME).json -o $(NAME).hardware .
 
 clean:
-	rm kernel8.img $(NAME) $(NAME).hardware kernel8.img.hardware *.o >/dev/null 2>/dev/null || true
+	rm $(NAME) $(NAME).hardware kernel8.img kernel8.img.hardware *.o >/dev/null 2>/dev/null || true
 
 kernel8.img: $(NAME)
-	llvm-objcopy -O binary $(NAME) kernel8.img
+	$(TINYGO_OBJCOPY) -O binary $(NAME) kernel8.img
 
 kernel8.img.hardware: $(NAME).hardware
-	llvm-objcopy -O binary $(NAME).hardware kernel8.img.hardware
+	$(TINYGO_OBJCOPY) -O binary $(NAME).hardware kernel8.img.hardware
 
 run:
 	qemu-system-aarch64 -M raspi3 -kernel $(NAME) -serial null -serial chardev:char0 \
