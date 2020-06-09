@@ -16,7 +16,7 @@ endif
 NAME=antc
 TINYGO_CLANG=$(LLVM)/bin/clang
 TINYGO_OBJCOPY=$(LLVM)/bin/llvm-objcopy
-TINYGO_LLD=$(LLVM)/bin/ll.lld
+TINYGO_LLD=$(LLVM)/bin/ld.lld
 TINYGO_TINYGO=$(TINYGO)/build/tinygo
 
 FONTDIR=$(FEELINGS)/src/lib/upbeat
@@ -27,13 +27,16 @@ TARGET=aarch64-none-elf
 $(BOOTASM).o: $(BOOTLIB)/$(BOOTASM).S
 	$(TINYGO_CLANG) -target $(TARGET) -c -o $(BOOTASM).o $(BOOTLIB)/$(BOOTASM).S
 
-$(FONTDIR)/font.o: $(FONTDIR)/font.psf
-	$(TINYGO_LLD)-m aarch64elf -r -b binary -o $(FONTDIR)/font.o $(FONTDIR)/font.psf
+font.psf: $(FONTDIR)/font.psf
+	cp $(FONTDIR)/font.psf .
 
-$(NAME): *.go $(FONTDIR)/font.o $(BOOTASM).o
+font.o: font.psf
+	$(TINYGO_LLD) -m aarch64elf -r -b binary -o font.o font.psf
+
+$(NAME): *.go font.o $(BOOTASM).o
 	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='$(FONTDIR)/font.o  $(BOOTASM).o' -cflags='-g' -target $(NAME)_qemu.json -o $(NAME) .
 
-$(NAME).hardware: *.go $(FONTDIR)/font.o $(BOOTASM).o
+$(NAME).hardware: *.go font.o $(BOOTASM).o
 	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build  -ldflags='$(FONTDIR)/font.o  $(BOOTASM).o' -target $(NAME).json -o $(NAME).hardware .
 
 clean:

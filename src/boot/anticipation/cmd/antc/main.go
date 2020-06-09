@@ -174,7 +174,7 @@ func processLine(line string) (bool, error) {
 		end--
 	}
 
-	//just do what the line says
+	// just do what the line says
 	converted, lt, _, err := anticipation.DecodeAndCheckStringToBytes(line[:end])
 	if err != nil {
 		return false, err
@@ -200,7 +200,7 @@ func processLine(line string) (bool, error) {
 	return false, nil
 }
 
-func jumpToNewKernel(ut uint32, ep uint32) {
+func jumpToNewKernel(ut uint32, ep uint64) {
 	arm.AsmFull("mov x19, {ut}", map[string]interface{}{"ut": ut})
 	arm.AsmFull("mov x20, {ep}", map[string]interface{}{"ep": ep})
 	arm.Asm("mov x22, #0")

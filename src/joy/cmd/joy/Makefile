@@ -30,24 +30,27 @@ endif
 EXCEPTIONASM=exception
 FONTDIR=$(FEELINGS)/src/lib/upbeat
 TINYGO_TINYGO=$(TINYGO)/build/tinygo
-TINYGO_LLD=$(LLVM)/bin/ll.lld
+TINYGO_LLD=$(LLVM)/bin/ld.lld
 TINYGO_CLANG=$(LLVM)/bin/clang
 
 NAME=joy
 TINYGO_CLANG=$(LLVM)/bin/clang
 TARGET=aarch64-none-elf
 
-$(FONTDIR)/font.o: $(FONTDIR)/font.psf
-	$(TINYGO_LLD)-m aarch64elf -r -b binary -o $(FONTDIR)/font.o $(FONTDIR)/font.psf
+font.psf: $(FONTDIR)/font.psf
+	cp $(FONTDIR)/font.psf .
+
+font.o: font.psf
+	$(TINYGO_LLD) -v -m aarch64elf -r -b binary -o font.o font.psf
 
 $(EXCEPTIONASM).o: ../../$(EXCEPTIONASM).S
 	$(TINYGO_CLANG) -target $(TARGET) -c -o $(EXCEPTIONASM).o ../../$(EXCEPTIONASM).S
 
-$(NAME): *.go $(EXCEPTIONASM).o $(FONTDIR)/font.o
-	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='$(FONTDIR)/font.o $(EXCEPTIONASM).o' -cflags='-g' -target $(NAME)_qemu.json -o $(NAME) .
+$(NAME): *.go $(EXCEPTIONASM).o font.o
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='font.o $(EXCEPTIONASM).o' -cflags='-g' -target $(NAME)_qemu.json -o $(NAME) .
 
-$(NAME).hardware: *.go $(EXCEPTIONASM).o $(FONTDIR)/font.o
-	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='$(FONTDIR)/font.o $(EXCEPTIONASM).o' -target $(NAME).json -o $(NAME).hardware .
+$(NAME).hardware: *.go $(EXCEPTIONASM).o font.o
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='font.o $(EXCEPTIONASM).o' -target $(NAME).json -o $(NAME).hardware .
 
 clean:
 	rm kernel8.img $(NAME) $(NAME).hardware *.o >/dev/null 2>/dev/null || true

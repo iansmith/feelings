@@ -10,14 +10,17 @@ import (
 // write bytes into memory or set key values.
 //
 type byteBuster interface {
-	Write(addr uint32, value uint8) bool
+	Write(addr uint64, value uint8) bool
 	SetBaseAddr(addr uint32)
 	SetEntryPoint(addr uint32)
 	SetUnixTime(addr uint32)
-	BaseAddress() uint32
-	EntryPoint() uint32
-	UnixTime() uint32
+	BaseAddress() uint64
+	EntryPoint() uint64
 	EntryPointIsSet() bool
+
+	SetBigEntryPoint(addr uint32)
+	SetBigBaseAddr(addr uint32)
+	UnixTime() uint32
 }
 
 const entryPointSentinal = 0x22222
@@ -31,16 +34,17 @@ const entryPointSentinal = 0x22222
 //
 type fakeByteBuster struct {
 	written    int
-	baseAdd    uint32
-	lineOffset uint32
+	baseAdd    uint64
+	lineOffset uint64
 	values     []byte
-	entryPoint uint32
+	entryPoint uint64
 	unixtime   uint32
 	t          *testing.T
 }
 
 func (f *fakeByteBuster) SetEntryPoint(addr uint32) {
-	f.entryPoint = addr
+	prev := f.entryPoint & 0xffff_ffff_0000_0000
+	f.entryPoint = prev | uint64(addr)
 }
 
 func (f *fakeByteBuster) SetUnixTime(t uint32) {
@@ -48,7 +52,17 @@ func (f *fakeByteBuster) SetUnixTime(t uint32) {
 }
 
 func (f *fakeByteBuster) SetBaseAddr(addr uint32) {
-	f.baseAdd = addr
+	prev := f.baseAdd & 0xffff_ffff_0000_0000
+	f.baseAdd = prev | uint64(addr)
+}
+
+func (f *fakeByteBuster) SetBigEntryPoint(addr uint32) {
+	prev := f.entryPoint & 0xffff_ffff
+	f.entryPoint = prev | (uint64(addr) << 32)
+}
+func (f *fakeByteBuster) SetBigBaseAddr(addr uint32) {
+	prev := f.baseAdd & 0xffff_ffff
+	f.baseAdd = prev | (uint64(addr) << 32)
 }
 
 func (f *fakeByteBuster) FinishedOk() bool {
@@ -56,7 +70,7 @@ func (f *fakeByteBuster) FinishedOk() bool {
 }
 
 // the fake one can only process one line of data
-func newFakeByteBuster(data []byte, onlyLineOffset uint32) *fakeByteBuster {
+func newFakeByteBuster(data []byte, onlyLineOffset uint64) *fakeByteBuster {
 	bb := &fakeByteBuster{lineOffset: onlyLineOffset, values: data}
 	bb.entryPoint = entryPointSentinal
 	return bb
@@ -66,11 +80,11 @@ func (f *fakeByteBuster) EntryPointIsSet() bool {
 	return f.entryPoint != entryPointSentinal
 }
 
-func (f *fakeByteBuster) BaseAddress() uint32 {
+func (f *fakeByteBuster) BaseAddress() uint64 {
 	return f.baseAdd
 }
 
-func (f *fakeByteBuster) EntryPoint() uint32 {
+func (f *fakeByteBuster) EntryPoint() uint64 {
 	return f.entryPoint
 }
 
@@ -78,9 +92,9 @@ func (f *fakeByteBuster) UnixTime() uint32 {
 	return f.unixtime
 }
 
-func (f *fakeByteBuster) Write(addr uint32, value uint8) bool {
+func (f *fakeByteBuster) Write(addr uint64, value uint8) bool {
 	//f.t.Logf("addr %x value %x, addrExpected %x valueExpected %x",addr,value,baseAddr,f.values[f.written])
-	if addr != f.BaseAddress()+f.lineOffset+uint32(f.written) {
+	if addr != f.BaseAddress()+f.lineOffset+uint64(f.written) {
 		return false
 	}
 	if f.written >= len(f.values) {
@@ -100,26 +114,44 @@ func (f *fakeByteBuster) Write(addr uint32, value uint8) bool {
 // metalByBuster is the byteBuster that is actually used on the real hardware.
 //
 type MetalByteBuster struct {
-	baseAdd    uint32
+	baseAdd    uint64
 	lineOffset uint32
-	entryPoint uint32
+	entryPoint uint64
 	unixTime   uint32
 	written    uint32
 }
 
+//set entry point affects the LOWER 32 bits of the entry point
 func (m *MetalByteBuster) SetEntryPoint(addr uint32) {
 	print("@ setting entry point of stage 1 to ", addr, "\n")
-	m.entryPoint = addr
+	prev := m.entryPoint & 0xffff_ffff_0000_0000
+	m.entryPoint = prev | uint64(addr)
 }
 
+//set big entry point affects the UPPER 32 bits of the entry point
+func (m *MetalByteBuster) SetBigEntryPoint(addr uint32) {
+	print("@setting big entrypoint ", uint64(addr)<<32, "\n")
+	prev := m.entryPoint & 0xffff_ffff
+	m.entryPoint = prev | (uint64(addr) << 32)
+}
 func (m *MetalByteBuster) SetUnixTime(t uint32) {
 	print("@setting current time to unix ", t, "\n")
 	m.unixTime = t
 }
 
+// SetBigBaseAddr sets the HIGH order 32 bits of the base address
+func (m *MetalByteBuster) SetBigBaseAddr(addr uint32) {
+	print("@setting big base address ", uint64(addr)<<32, "\n")
+	prev := m.baseAdd & 0xffff_ffff
+	m.baseAdd = prev | (uint64(addr) << 32)
+
+}
+
+// SetBaseAddr sets the LOW order 32 bits of the base address
 func (m *MetalByteBuster) SetBaseAddr(addr uint32) {
 	print("@ setting base address for download to ", addr, "\n")
-	m.baseAdd = addr
+	prev := m.baseAdd & 0xffff_ffff_0000_0000
+	m.baseAdd = prev | uint64(addr)
 }
 
 // the fake one can only process one line of data
@@ -129,11 +161,11 @@ func NewMetalByteBuster() *MetalByteBuster {
 	return bb
 }
 
-func (m *MetalByteBuster) BaseAddress() uint32 {
+func (m *MetalByteBuster) BaseAddress() uint64 {
 	return m.baseAdd
 }
 
-func (m *MetalByteBuster) EntryPoint() uint32 {
+func (m *MetalByteBuster) EntryPoint() uint64 {
 	return m.entryPoint
 }
 
@@ -141,7 +173,7 @@ func (m *MetalByteBuster) UnixTime() uint32 {
 	return m.unixTime
 }
 
-func (m *MetalByteBuster) Write(addr uint32, value uint8) bool {
+func (m *MetalByteBuster) Write(addr uint64, value uint8) bool {
 	a := (*uint8)(unsafe.Pointer(uintptr(addr)))
 	*a = value
 	m.written++
@@ -156,12 +188,12 @@ func (m *MetalByteBuster) EntryPointIsSet() bool {
 ////////////////////////////////////////////////////////////////////////
 type nullByteBuster struct {
 	unixTime   uint32
-	addr       uint32
-	entryPoint uint32
+	addr       uint64
+	entryPoint uint64
 }
 
 func (n *nullByteBuster) SetEntryPoint(addr uint32) {
-	n.entryPoint = addr
+	n.entryPoint = uint64(addr)
 }
 
 func (n *nullByteBuster) SetUnixTime(t uint32) {
@@ -169,7 +201,7 @@ func (n *nullByteBuster) SetUnixTime(t uint32) {
 }
 
 func (n *nullByteBuster) SetBaseAddr(addr uint32) {
-	n.addr = addr
+	n.addr = uint64(addr)
 }
 
 func NewNullByteBuster() *nullByteBuster {
@@ -183,11 +215,11 @@ func (n *nullByteBuster) EntryPointIsSet() bool {
 	return n.entryPoint != entryPointSentinal
 }
 
-func (n *nullByteBuster) BaseAddress() uint32 {
+func (n *nullByteBuster) BaseAddress() uint64 {
 	return n.addr
 }
 
-func (n *nullByteBuster) EntryPoint() uint32 {
+func (n *nullByteBuster) EntryPoint() uint64 {
 	return n.entryPoint
 }
 
@@ -195,6 +227,12 @@ func (n *nullByteBuster) UnixTime() uint32 {
 	return n.unixTime
 }
 
-func (f *nullByteBuster) Write(addr uint32, value uint8) bool {
+func (n *nullByteBuster) Write(addr uint64, value uint8) bool {
 	return true
+}
+
+func (n *nullByteBuster) SetBigEntryPoint(addr uint32) {
+}
+
+func (n *nullByteBuster) SetBigBaseAddr(addr uint32) {
 }

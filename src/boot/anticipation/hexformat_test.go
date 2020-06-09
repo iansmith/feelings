@@ -41,20 +41,22 @@ func TestEndToEnd(t *testing.T) {
 	checkAllAndProcess(t, gw, DataLine, bb, 0x12000, true) //unchanged after a data line
 	elastr := ":02000004FC0AF4"
 	checkAllAndProcess(t, elastr, ExtendedLinearAddress, bb, 0xFC0A0000, false) //unchanged after a data line
-	entryPoint := ":04000005000000CD2A"
+	bigentryPoint := ":04000082DEADBEEF42"
 	if bb.EntryPointIsSet() {
 		t.Errorf("entry point should not be set yet!")
 	}
+	checkAllAndProcess(t, bigentryPoint, ExtensionBigEntryPoint, bb, 0xFC0A0000, false) //unchanged after a data line
+	entryPoint := ":04000005000000CD2A"
 	checkAllAndProcess(t, entryPoint, StartLinearAddress, bb, 0xFC0A0000, false) //unchanged after a data line
 	if !bb.EntryPointIsSet() {
 		t.Errorf("we set the entry point with an SLA but it is not visible in EntryPointIsSet")
 	}
-	if bb.EntryPoint() != 0xCD {
-		t.Errorf("expected entry point 0xCD because of SLA but got %08x", bb.EntryPoint())
+	if bb.EntryPoint() != 0xDEADBEEF000000CD {
+		t.Errorf("expected entry point 0xDEADBEEF000000CD because of BigEntryPoint and SLA but got %08x", bb.EntryPoint())
 	}
 }
 
-func checkAllAndProcess(t *testing.T, t1 string, hlt HexLineType, bb *fakeByteBuster, finalBase uint32, bytesChanged bool) {
+func checkAllAndProcess(t *testing.T, t1 string, hlt HexLineType, bb *fakeByteBuster, finalBase uint64, bytesChanged bool) {
 	t.Helper()
 	converted, lt, _, err := DecodeAndCheckStringToBytes(t1)
 	if err != nil {
