@@ -67,12 +67,12 @@ func main() {
 	//if info == nil {
 	// panic("giving up, cant set framebuffer res")
 	//}
-	// info := upbeat.SetFramebufferRes1024x768()
-	// if info == nil {
-	// 	panic("giving up, can't set framebuffer res")
-	// }
+	info := upbeat.SetFramebufferRes1024x768()
+	if info == nil {
+		panic("giving up, can't set framebuffer res")
+	}
 
-	logger = upbeat.NewConsoleLogger()
+	logger = upbeat.NewConsoleLogger(info)
 
 	id, ok := upbeat.BoardID()
 	if ok == false {

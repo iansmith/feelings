@@ -1,6 +1,7 @@
 package anticipation
 
 import (
+	"fmt"
 	"testing"
 	"unsafe"
 )
@@ -123,35 +124,33 @@ type MetalByteBuster struct {
 
 //set entry point affects the LOWER 32 bits of the entry point
 func (m *MetalByteBuster) SetEntryPoint(addr uint32) {
-	print("@ setting entry point of stage 1 to ", addr, "\n")
 	prev := m.entryPoint & 0xffff_ffff_0000_0000
 	m.entryPoint = prev | uint64(addr)
 }
 
 //set big entry point affects the UPPER 32 bits of the entry point
 func (m *MetalByteBuster) SetBigEntryPoint(addr uint32) {
-	print("@setting big entrypoint ", uint64(addr)<<32, "\n")
 	prev := m.entryPoint & 0xffff_ffff
 	m.entryPoint = prev | (uint64(addr) << 32)
 }
 func (m *MetalByteBuster) SetUnixTime(t uint32) {
-	print("@setting current time to unix ", t, "\n")
 	m.unixTime = t
 }
 
 // SetBigBaseAddr sets the HIGH order 32 bits of the base address
 func (m *MetalByteBuster) SetBigBaseAddr(addr uint32) {
-	print("@setting big base address ", uint64(addr)<<32, "\n")
 	prev := m.baseAdd & 0xffff_ffff
 	m.baseAdd = prev | (uint64(addr) << 32)
+	fmt.Printf("set BIG base address 0x%x\n", m.baseAdd)
 
 }
 
 // SetBaseAddr sets the LOW order 32 bits of the base address
 func (m *MetalByteBuster) SetBaseAddr(addr uint32) {
-	print("@ setting base address for download to ", addr, "\n")
 	prev := m.baseAdd & 0xffff_ffff_0000_0000
 	m.baseAdd = prev | uint64(addr)
+	fmt.Printf("set base address 0x%x\n", m.baseAdd)
+
 }
 
 // the fake one can only process one line of data
@@ -174,6 +173,14 @@ func (m *MetalByteBuster) UnixTime() uint32 {
 }
 
 func (m *MetalByteBuster) Write(addr uint64, value uint8) bool {
+	crap := uint64(0xff)
+	crap = ^crap
+	if addr == 0xfffffc0030001548 {
+		fmt.Printf("at the entry point 0x%x, the byte is 0x%x\n", addr, value)
+	}
+	if addr&crap == addr {
+		fmt.Printf("reached 0x%x\n", addr)
+	}
 	a := (*uint8)(unsafe.Pointer(uintptr(addr)))
 	*a = value
 	m.written++

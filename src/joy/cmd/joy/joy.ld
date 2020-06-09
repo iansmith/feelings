@@ -2,6 +2,7 @@
  * This is for building the kernel so it needs to be loaded into a very different
  * place than the usual spot for bare metal.
  */
+ENTRY(main)
 
 SECTIONS
 {

@@ -27,17 +27,20 @@ TARGET=aarch64-none-elf
 $(BOOTASM).o: $(BOOTLIB)/$(BOOTASM).S
 	$(TINYGO_CLANG) -target $(TARGET) -c -o $(BOOTASM).o $(BOOTLIB)/$(BOOTASM).S
 
+set_regs.o: set_regs.S
+	$(TINYGO_CLANG) -target $(TARGET) -c -o set_regs.o set_regs.S
+
 font.psf: $(FONTDIR)/font.psf
 	cp $(FONTDIR)/font.psf .
 
 font.o: font.psf
 	$(TINYGO_LLD) -m aarch64elf -r -b binary -o font.o font.psf
 
-$(NAME): *.go font.o $(BOOTASM).o
-	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='$(FONTDIR)/font.o  $(BOOTASM).o' -cflags='-g' -target $(NAME)_qemu.json -o $(NAME) .
+$(NAME): *.go font.o set_regs.o $(BOOTASM).o
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='font.o set_regs.o $(BOOTASM).o' -cflags='-g' -target $(NAME)_qemu.json -o $(NAME) .
 
-$(NAME).hardware: *.go font.o $(BOOTASM).o
-	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build  -ldflags='$(FONTDIR)/font.o  $(BOOTASM).o' -target $(NAME).json -o $(NAME).hardware .
+$(NAME).hardware: *.go font.o set_regs.o $(BOOTASM).o
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build  -ldflags='font.o set_regs.o  $(BOOTASM).o' -target $(NAME).json -o $(NAME).hardware .
 
 clean:
 	rm $(NAME) $(NAME).hardware kernel8.img kernel8.img.hardware *.o >/dev/null 2>/dev/null || true
@@ -51,6 +54,7 @@ kernel8.img.hardware: $(NAME).hardware
 run:
 	qemu-system-aarch64 -M raspi3 -kernel $(NAME) -serial null -serial chardev:char0 \
  		-d unimp,cpu_reset,guest_errors -semihosting -semihosting-config enable=on,target=native \
+ 		 -serial mon:stdio \
  		--chardev pty,path=/dev/ttys009,mux=on,id=char0
 
 debug:

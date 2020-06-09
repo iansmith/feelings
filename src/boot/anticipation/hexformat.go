@@ -121,8 +121,8 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 			return true, false
 		}
 		elaAddr := uint32(converted[4])*256 + uint32(converted[5])
-		elaAddr = elaAddr << 16 //data supplied is high order 32
-		bb.SetBaseAddr(elaAddr)
+		elaAddr = elaAddr << 16 //data supplied is high order 16 of 32
+		bb.SetBaseAddr(elaAddr) //but this sets the lower order 32 of 64
 		return false, false
 	case ExtensionUnixTime: //32 bit int from epoch
 		length := converted[0]

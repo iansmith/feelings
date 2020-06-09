@@ -28,3 +28,14 @@ _enable_mmu_tables:
 
 	isb
 	ret
+
+.globl jump_to_kernel
+jump_to_kernel:
+	//these are params from bootloader to kernel
+	mov x19,x0
+	mov x20,x1
+	mov x21,#0
+	mov x22,#0
+	mov sp,x2
+	br x20
+
