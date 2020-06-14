@@ -54,8 +54,9 @@ kernel8.img.hardware: $(NAME).hardware
 run:
 	qemu-system-aarch64 -M raspi3 -kernel $(NAME) -serial null -serial chardev:char0 \
  		-d unimp,cpu_reset,guest_errors -semihosting -semihosting-config enable=on,target=native \
- 		 -serial mon:stdio \
  		--chardev pty,path=/dev/ttys009,mux=on,id=char0
+
+# 		 -serial mon:stdio \
 
 debug:
 	qemu-system-aarch64 \

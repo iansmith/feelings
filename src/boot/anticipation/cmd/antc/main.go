@@ -24,21 +24,21 @@ const MemoryNoCacheValue = 0x44                                //not inner or ou
 const MemoryNormalValue = 0xFF                                 //cache all you want, including using TLB
 
 //drop bottom 64k
-const noLast16 = 0xffff_ffff_ffff_0000
+const noLast16 = 0xffffffffffff0000
 
 //export _enable_mmu_tables
 func enableMMUTables(mairVal uint64, tcrVal uint64, sctrlVal uint64, ttbr0 uint64, ttbr1 uint64)
 
-const isKernelAddrMask = 0xffff_fc00_0000_0000
+const isKernelAddrMask = 0xfffffc0000000000
 
 const kernelBase = uintptr(0x3000_104C | isKernelAddrMask)
 
 // this is the page AFTER the kernel load address but stack grows down so
 // we choose the highest address
-const kernelStackTop = 0xffff_fc00_3001_0000 + (0x10000 - 16)
+const kernelStackTop = 0xfffffc0030010000 + (0x10000 - 16)
 
-const TTBR0Val = uint64(0x1_0000) //this is where we START our page tables, must be 64K aligned
-const TTBR1Val = uint64(0x1_0000) //this is where we START our page tables, must be 64K aligned
+const TTBR0Val = uint64(0x10000) //this is where we START our page tables, must be 64K aligned
+const TTBR1Val = uint64(0x10000) //this is where we START our page tables, must be 64K aligned
 
 var logger *trust.Logger
 
@@ -64,6 +64,7 @@ func wait() {
 var anticipation_addr uint64
 
 func main() {
+
 	buffer = make([]uint8, anticipation.FileXFerDataLineSize)
 	lr = newLineRing() //probably overkill since never need more than 1 line
 	metal = anticipation.NewMetalByteBuster()
@@ -190,7 +191,7 @@ func interruptReceive() {
 			atLeastOne = true
 			if started {
 				logger.Debugf("___________WATCHDOG! __________\n")
-				machine.MiniUART.WriteString("! watchdog timeout during transfer\n")
+				machine.MiniUART.WriteString(". watchdog timeout during transfer\n")
 			} else {
 				logger.Debugf("anticipation: local timer interrupt: #%03d", waitCount)
 				machine.MiniUART.WriteString(fmt.Sprintf(". local timer interrupt: #%03d\n", waitCount))
@@ -228,20 +229,14 @@ func processLine(line string) (bool, error) {
 		}
 		// normally our CALLER does the confirm, but we are never going to
 		// reach there
-		fmt.Printf("xxx entry point=0x%016x, addr=0x%016x\n", metal.EntryPoint(),
-			metal.BaseAddress())
 		machine.MiniUART.WriteString(".\n") //signal the sender everything is ok
 		logger.Infof(" === jumping to kernel at address %x ===\n", metal.EntryPoint())
 		upbeat.MaskDAIF() //turn off interrupts while we boot up the kernel
 		ut := metal.UnixTime()
 		ep := metal.EntryPoint()
-
-		for i := 0; i < 24; i += 8 {
-			x := ((*uint64)(unsafe.Pointer(uintptr(metal.EntryPoint()) + uintptr(i))))
-			logger.Debugf("Self test readback from kernel space 0x%016x=> 0x%016x", x, *x)
-
-		}
-
+		//turn off the interrupts so we don't get them in kernel until we are ready
+		machine.IC.Disable1.SetAux() //sadly, you *set* things in the DISable reg to turn off
+		machine.QA7.LocalTimerControl.ClearTimerEnable()
 		jumpToKernel(ut, ep, kernelStackTop)
 	}
 	//keep going

@@ -14,15 +14,36 @@ import (
 func initExceptionVector()
 
 func KernelMain() {
+	//slightly tricky why this is necessary: yes, the uart is already configured
+	//by the bootloader... however, the LINKER puts a reference to MiniUART in this
+	//binary which is not initialized so if you try to call something like
+	//machine.MiniUART.WriteString() you get a nil pointer exception.
+	machine.MiniUART = machine.NewUART()
+	machine.MiniUART.Configure(&machine.UARTConfig{})
+	machine.MiniUART.WriteString("yyz 0\n")
+
+	fmt.Printf("xxx %p\n", trust.DefaultLogger)
+
+	machine.MiniUART.WriteString("yyz 1\n")
+	//initializers definitely haven't been run... maybe zeroing has?
+	trust.DefaultLogger.SetLevel(trust.ErrorMask | trust.DebugMask | trust.InfoMask | trust.WarnMask)
+	machine.MiniUART.WriteString("yyz 2\n")
 	initExceptionVector()
+	machine.MiniUART.WriteString("yyz 3\n")
 	stack, heapStart, heapEnd, err := KMemoryInit()
+	machine.MiniUART.WriteString("yyz 4\n")
 	if err != JoyNoError {
 		panic(JoyErrorMessage(err))
 	}
+	machine.MiniUART.WriteString("yyz 5\n")
 	InitDomains(stack, heapStart, heapEnd)
+	machine.MiniUART.WriteString("yyz 6\n")
 	InitGIC()
+	machine.MiniUART.WriteString("yyz 7\n")
 	InitSchedulingTimer()
+	machine.MiniUART.WriteString("yyz 8\n")
 	EnableIRQAndFIQ()
+	machine.MiniUART.WriteString("yyz 9\n")
 
 	trust.Debugf("about to copy 1")
 	err = DomainCopy(displayInfo, 0)

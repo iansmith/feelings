@@ -5,7 +5,7 @@
 joy.initExceptionVector:
 	ldr x0, =VectorTable
     msr vbar_el1,x0
-
+	ret
 
 /* macro to align handlers every 0x80 bytes */
 .macro vector handler type
@@ -129,7 +129,7 @@ joy.setHeapPointers:
 	adrp x3,_heap_end
 	str x0,[x2]
 	str x1,[x3]
-
+	ret
 
 .global joy.LaunderFunctionPtr0
 joy.LaunderFunctionPtr0:  //reg 0 is the parameter, just return it
@@ -142,6 +142,7 @@ joy.LaunderFunctionPtr1:  //reg 0 is the parameter, just return it
 .extern PermitPreemption
 schedule_tail:
     bl    PermitPreemption
+    ret
 
 .globl joy.retFromFork
 joy.retFromFork:

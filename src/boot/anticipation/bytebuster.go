@@ -1,7 +1,6 @@
 package anticipation
 
 import (
-	"fmt"
 	"testing"
 	"unsafe"
 )
@@ -141,7 +140,6 @@ func (m *MetalByteBuster) SetUnixTime(t uint32) {
 func (m *MetalByteBuster) SetBigBaseAddr(addr uint32) {
 	prev := m.baseAdd & 0xffff_ffff
 	m.baseAdd = prev | (uint64(addr) << 32)
-	fmt.Printf("set BIG base address 0x%x\n", m.baseAdd)
 
 }
 
@@ -149,7 +147,6 @@ func (m *MetalByteBuster) SetBigBaseAddr(addr uint32) {
 func (m *MetalByteBuster) SetBaseAddr(addr uint32) {
 	prev := m.baseAdd & 0xffff_ffff_0000_0000
 	m.baseAdd = prev | uint64(addr)
-	fmt.Printf("set base address 0x%x\n", m.baseAdd)
 
 }
 
@@ -173,14 +170,6 @@ func (m *MetalByteBuster) UnixTime() uint32 {
 }
 
 func (m *MetalByteBuster) Write(addr uint64, value uint8) bool {
-	crap := uint64(0xff)
-	crap = ^crap
-	if addr == 0xfffffc0030001548 {
-		fmt.Printf("at the entry point 0x%x, the byte is 0x%x\n", addr, value)
-	}
-	if addr&crap == addr {
-		fmt.Printf("reached 0x%x\n", addr)
-	}
 	a := (*uint8)(unsafe.Pointer(uintptr(addr)))
 	*a = value
 	m.written++

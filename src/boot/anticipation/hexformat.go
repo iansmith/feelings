@@ -196,7 +196,7 @@ func ValidBufferLength(l uint16, converted []byte) bool {
 	}
 	total += uint16(converted[0]) * 2
 	if l != total {
-		print("!bad buffer length, expected", total, "but got", l, " based on ", converted[0], "\n")
+		print("!bad buffer length, expected ", total, " but got", l, " based on ", converted[0], "\n")
 		return false
 	}
 	return true

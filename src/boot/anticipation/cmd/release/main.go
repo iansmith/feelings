@@ -119,7 +119,6 @@ func main() {
 		if oh == nil {
 			log.Fatalf("unable to connect to %s", *ptyFlag)
 		}
-		log.Printf("xxxx verbose %v", *verbose)
 		protocol(flag.Arg(0), fp, lsect, oh)
 	}
 	if !*testFlag && *ptyFlag == "" {
@@ -229,10 +228,7 @@ outer:
 				log.Print("@@@ ", l[1:])
 			}
 		case '!': //error
-			log.Printf("!!! ", l[1:])
-			if *verbose > 1 {
-				*verbose = 1
-			}
+			log.Printf("!!! %s", l[1:])
 			tx.errorCount++
 			switch {
 			case tx.errorCount > 5:

@@ -6,11 +6,12 @@ import (
 	tgr "runtime"
 )
 
-// Default Logger points to the UART that is the primary output for the kernel log messages.
-var DefaultLogger = &Logger{sink: newDefaultSink()}
+// Default Logger normally points to the UART that is the primary output for the
+// kernel log messages.
+var DefaultLogger *Logger = NewLogger(newDefaultSink())
 
 func (d *defaultSink) Printf(format string, params ...interface{}) {
-	fmt.Printf("now in printf of  sink \n")
+	//fmt.Printf("now in printf of  sink \n")
 	_, _ = fmt.Printf(format, params...)
 }
 
