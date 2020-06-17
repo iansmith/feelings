@@ -33,10 +33,6 @@ const isKernelAddrMask = 0xfffffc0000000000
 
 const kernelBase = uintptr(0x3000_104C | isKernelAddrMask)
 
-// this is the page AFTER the kernel load address but stack grows down so
-// we choose the highest address
-const kernelStackTop = 0xfffffc0030010000 + (0x10000 - 16)
-
 const TTBR0Val = uint64(0x10000) //this is where we START our page tables, must be 64K aligned
 const TTBR1Val = uint64(0x10000) //this is where we START our page tables, must be 64K aligned
 
@@ -234,17 +230,24 @@ func processLine(line string) (bool, error) {
 		upbeat.MaskDAIF() //turn off interrupts while we boot up the kernel
 		ut := metal.UnixTime()
 		ep := metal.EntryPoint()
+		page := uint64(0x10000) //64K pages
+		lastAddr := metal.BaseAddress() + (page - 8)
+		logger.Debugf("last address we saw was 0x%x", lastAddr)
 		//turn off the interrupts so we don't get them in kernel until we are ready
 		machine.IC.Disable1.SetAux() //sadly, you *set* things in the DISable reg to turn off
 		machine.QA7.LocalTimerControl.ClearTimerEnable()
-		jumpToKernel(ut, ep, kernelStackTop)
+		// this is the page AFTER the kernel load address but stack grows down so
+		// we choose the highest address
+		kernelSP := uint64(0xfffffc0030010000) + (page - 16)
+
+		jumpToKernel(ep, lastAddr, uint64(ut), kernelSP)
 	}
 	//keep going
 	return false, nil
 }
 
 //export jump_to_kernel
-func jumpToKernel(ut uint32, ep uint64, sp uint64)
+func jumpToKernel(ep uint64, last uint64, ut uint64, sp uint64)
 
 // {
 // 	arm.AsmFull("mov x19,{ut}", map[string]interface{}{"ut": ut})

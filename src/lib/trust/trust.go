@@ -4,15 +4,29 @@ import (
 	"fmt"
 
 	tgr "runtime"
+
+	"machine"
 )
 
 // Default Logger normally points to the UART that is the primary output for the
 // kernel log messages.
-var DefaultLogger *Logger = NewLogger(newDefaultSink())
+var DefaultLogger *Logger = InitMiniUARTAndCreateLogger()
 
 func (d *defaultSink) Printf(format string, params ...interface{}) {
-	//fmt.Printf("now in printf of  sink \n")
-	_, _ = fmt.Printf(format, params...)
+	s := fmt.Sprintf(format, params...)
+	machine.MiniUART.WriteString(s)
+}
+
+func InitMiniUARTAndCreateLogger() *Logger {
+	//slightly tricky why this is necessary: yes, the uart is already configured
+	//by the bootloader... however, the LINKER puts a reference to MiniUART in this
+	//binary which is not initialized so if you try to call something like
+	//machine.MiniUART.WriteString() you get a nil pointer exception.
+	machine.MiniUART = machine.NewUART()
+	machine.MiniUART.Configure(&machine.UARTConfig{})
+
+	//just create new logger
+	return NewLogger(newDefaultSink())
 }
 
 func newDefaultSink() *defaultSink {
@@ -39,6 +53,10 @@ type LogSink interface {
 type Logger struct {
 	sink  LogSink
 	level MaskLevel
+}
+
+func (l *Logger) Sink() LogSink {
+	return l.sink
 }
 
 func NewLogger(sink LogSink) *Logger {

@@ -91,13 +91,14 @@ ex_el1:
     ldp	x29, x30, [sp], #16
     eret
 
-
+.align 5
 .globl semihosting_call                     // support for ARM v2 semihosting (qemu)
 semihosting_call:
     hlt 0xf000
     ret
 
 
+.align 5
 .globl joy.cpuSwitchTo
 joy.cpuSwitchTo:
 	mov	x10, x2                 // offset to RSS
@@ -149,3 +150,7 @@ joy.retFromFork:
     bl    schedule_tail
     mov    x0, x20
     blr    x19
+
+.global bootloader_params
+bootloader_params:
+.space 256

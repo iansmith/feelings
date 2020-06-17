@@ -6,6 +6,10 @@ import (
 	"lib/trust"
 )
 
+//type of a function pointer for our purposes... has to point to a simple machine
+//address, not something like a closure!
+type FuncPtr uint64
+
 // Maximum number of domains (roughly processes) in the system.
 const MaxDomains = 64
 
@@ -72,7 +76,7 @@ var DomainZero = DomainControlBlock{
 		0, 0, 0, 0, 0, 0},
 	State:        DomainStateRunning,
 	Counter:      0,
-	Priority:     1,
+	Priority:     100,
 	PreemptCount: 0,
 	Stack:        0,
 	Flags:        uint64(DomainFlagKernelThread),
@@ -86,20 +90,11 @@ var DomainsRunning uint16
 // an index into the array Domain.
 var CurrentDomain *DomainControlBlock
 
-// InitDomains is called once at startup time.   This initializes
-// data structures for running, with DomainOne as the domain that
-// is executing.
-func InitDomains(stackPage unsafe.Pointer, heapStart unsafe.Pointer, heapEnd unsafe.Pointer) {
-	//xxx how do we do stack alignment here? I just subtracted 16 so I can write
-	//xxx to the stack as normal, but this seems pretty bogus
-	top := unsafe.Pointer(uintptr(stackPage) + uintptr(KPageSize-16))
-	bottom := (*DomainControlBlock)(unsafe.Pointer(uintptr(stackPage) + uintptr(KPageSize)))
-	*bottom = DomainZero
-	bottom.Stack = uint64(uintptr(top))
-	bottom.HeapStart = heapStart
-	bottom.HeapEnd = heapEnd
+// InitDomains is called once at startup time.   This sets up some
+// data structures for process 0 that are not memory related.
+func InitDomains() {
 	DomainsRunning = 1
-	CurrentDomain = (*DomainControlBlock)(top)
+	Domain[0] = CurrentDomain
 }
 
 func DisallowPreemption() {
@@ -111,31 +106,39 @@ func PermitPreemption() {
 	CurrentDomain.PreemptCount--
 }
 
-func DomainCopy(fn func(uintptr), arg uint64) JoyError {
+func DomainCopy(fn FuncPtr, arg uint64) JoyError {
 	DisallowPreemption()
-	trust.Debugf("domain being copied")
+	var sp = new(uint64)
+	trust.Debugf("domain being copied (source is %p, prio is %d),%p",
+		CurrentDomain, CurrentDomain.Priority, sp)
 
-	heapStart, err := KMemoryGetFreePage()
+	newStack, err := KMemoryGetFreePage()
 	if err != JoyNoError {
 		return err
 	}
-	heapEnd := unsafe.Pointer(uintptr(heapStart) + uintptr(KPageSize))
-	codeAndStack, err := KMemoryGetFreePage()
+	top := uintptr(newStack) + uintptr(KPageSize-16)
+	trust.Debugf("domain being allocated (new one) is at %p (? %d) and current=%p", newStack,
+		CurrentDomain.Priority, CurrentDomain)
+	newDomain := (*DomainControlBlock)(unsafe.Pointer(uintptr(newStack)))
+	trust.Debugf("cast pointer (? %d) %p", CurrentDomain.Priority, CurrentDomain)
+
+	newHeap, err := KMemoryGetFreePage()
 	if err != JoyNoError {
 		return err
 	}
-	top := uintptr(codeAndStack) + uintptr(KPageSize-16)
-	newDomain := (*DomainControlBlock)(unsafe.Pointer(uintptr(codeAndStack) + uintptr(KPageSize)))
+	newHeapEnd := unsafe.Pointer(uintptr(newHeap) + uintptr(KPageSize))
 
+	trust.Debugf("in Domain copy we have current domain %p, heap is %p, and prio  is %d",
+		CurrentDomain, newHeap, CurrentDomain.Priority)
 	newDomain.Priority = CurrentDomain.Priority
 	newDomain.State = DomainStateRunning
 	newDomain.Counter = newDomain.Priority
 	newDomain.PreemptCount = 1
-	newDomain.HeapStart = heapStart
-	newDomain.HeapEnd = heapEnd
-	newDomain.RSS.X19 = LaunderFunctionPtr1(fn)
+	newDomain.HeapStart = newHeap
+	newDomain.HeapEnd = newHeapEnd
+	newDomain.RSS.X19 = uint64(fn)
 	newDomain.RSS.X20 = arg
-	newDomain.RSS.PC = LaunderFunctionPtr0(retFromFork)
+	newDomain.RSS.PC = retFromForkPtr
 	newDomain.RSS.SP = uint64(top)
 	index, err := findNewDomainSlot()
 	if err != JoyNoError {
@@ -144,10 +147,14 @@ func DomainCopy(fn func(uintptr), arg uint64) JoyError {
 	Domain[index] = newDomain
 	newDomain.Id = uint64(DomainsRunning)
 	DomainsRunning++
-	trust.Debugf("domain copied successfully (%d)", newDomain.Id)
+	trust.Debugf("domain copied successfully (DCB is %p, X19=%x, PC=%x) with prio %d",
+		newDomain, newDomain.RSS.X19, newDomain.RSS.PC, newDomain.Priority)
 	PermitPreemption()
 	return JoyNoError
 }
+
+//go:extern
+var retFromForkPtr uint64
 
 func findNewDomainSlot() (int, JoyError) {
 	for i := 0; i < MaxDomains; i++ {

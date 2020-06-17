@@ -10,7 +10,7 @@ import (
 //export raw_exception_handler
 func rawExceptionHandler(t uint64, esr uint64, addr uint64, el uint64, procId uint64) {
 	if t == 5 {
-		if machine.QA7.LocalTimerControl.InterruptPendingIsSet() {
+		if !machine.QA7.LocalTimerControl.InterruptPendingIsSet() {
 			trust.Debugf("No interrupt pending line is set for timer, exiting")
 			return
 		}

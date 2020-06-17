@@ -29,13 +29,36 @@ _enable_mmu_tables:
 	isb
 	ret
 
+//tricky: this has to be here so the linker will not complain when you compile
+//tricky: the antc command, but it will never be used because in fact the definition
+//tricky: is going to in the *kernel* address space
+.globl bootloader_params
+bootloader_params:
+.space 256
+
+kernel_boot_params:
+.dword 0xfffffc0030001100
+
+kernel_heap_start:
+.dword 0xfffffc003000de10
+
+kernel_heap_end:
+.dword 0xfffffc003000de18
+
 .globl jump_to_kernel
 jump_to_kernel:
-	//these are params from bootloader to kernel
+	ldr x19,kernel_boot_params
+	str x0, [x19]
+	add x19,x19,8
+	str x1, [x19]
+	add x19,x19,8
+	str x2, [x19]
+	add x19,x19,8
+	str x3, [x19]
+
+	//need to jump to kernel, it's entry was passed as first
 	mov x19,x0
-	mov x20,x1
-	mov x21,#0
-	mov x22,#0
-	mov sp,x2
-	br x20
+	//adjust stack to point to right place
+	mov sp,x3
+	br x19
 

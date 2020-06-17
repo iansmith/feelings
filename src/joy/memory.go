@@ -1,47 +1,67 @@
 package joy
 
 import (
+	"runtime"
 	"unsafe"
 
 	"lib/trust"
 )
 
-const KPageSize = uint64(0x1000) //64KB
-const KRamStart = uint64(0xfffffc0030000000)
+const KPageSize = uint64(0x10000)            //64KB
+const KRamStart = uint64(0xfffffc0030000000) //KMemoryInit works around the kernel code,stack,heap
 
-//const KRamEnd = 0xffff_fc00_32FF_FFFF
-const KNumPages = 768
+//const KRamEnd = 0xfffffc0033000000 //actually 1 byte into next page so exclusive
+const KNumPages = 766 //(because we loaded kernel code this is not 768)
 const KInUseSize = 96 //bit vector
 
 //extern _heap_start
 var heap_start [0]uintptr //pointer from assembly
-
 //extern _heap_end
 var heap_end [0]uintptr //pointer from assembly
 
 var KMemInUse [KInUseSize]uint64
 
-// KMemoryInint sets up for Domain 0 and returns the stack to use for that domain
-// if all goes well.  The other two pointers are the start and end of the heap
-// for domain 0.
-func KMemoryInit() (unsafe.Pointer, unsafe.Pointer, unsafe.Pointer, JoyError) {
+// KMemoryInint sets up for Domain 0 and returns if everything that needed
+// to be patched up (mostly heap) has been patched up.  This is a bit tricky
+// because of the fact that we are allocating space for something that is
+// already running (this thread) and whose SP is already set.
+func KMemoryInit() JoyError {
+	//trust.Infof("kmemoryinit: %x", KRamStart)
 	//our code page
 	if _, err := KMemorySetInUse(0); err != JoyNoError {
-		return nil, nil, nil, err
+		return err
 	}
-	//stack was set up by the bootloader
+	//stack was set up by the bootloader, but we want our data structs
+	//to reflect this properly
 	stack, err := KMemorySetInUse(1)
 	if err != JoyNoError {
-		return nil, nil, nil, err
+		return err
 	}
+
+	//trust.Infof("kmemoryinit setting up DCB and stack for process 0: %p", stack)
+	top := unsafe.Pointer(uintptr(stack) + uintptr(KPageSize-16))
+	bottom := (*DomainControlBlock)(unsafe.Pointer(uintptr(stack)))
+	*bottom = DomainZero
+	bottom.Stack = uint64(uintptr(top))
+
 	//we need setup heap
+	start := (*uint64)((unsafe.Pointer)(&heap_start))
+	end := (*uint64)((unsafe.Pointer)(&heap_end))
+
 	ptr, err := KMemorySetInUse(2)
 	if err != JoyNoError {
-		return nil, nil, nil, err
+		return err
 	}
-	//setup our heap, we do this now so we can proceed with normal execution
-	setHeapPointers(uint64(uintptr(ptr)), uint64(uintptr(ptr)+uintptr(KPageSize)))
-	return stack, ptr, (unsafe.Pointer)(uintptr(ptr) + uintptr(KPageSize)), JoyNoError
+	*start = uint64(uintptr(ptr))
+	*end = uint64(uintptr(ptr) + uintptr(KPageSize) - 16)
+	bottom.HeapStart = unsafe.Pointer(uintptr(*start))
+	bottom.HeapEnd = unsafe.Pointer(uintptr(*end))
+	CurrentDomain = (*DomainControlBlock)(bottom)
+	runtime.LogAlloc = true
+	trust.Infof("kmemoryinit kernel heap: heap_start=0x%x "+
+		"heap_end is 0x%x", *start, *end)
+
+	return JoyNoError
 }
 
 func KMemoryReleasePage(kPage int) (unsafe.Pointer, JoyError) {
@@ -65,7 +85,7 @@ func KMemoryGetFreePage() (unsafe.Pointer, JoyError) {
 			return nil, err
 		}
 		if ok {
-			trust.Infof("KMemoryGetFreePage: found free page %d", i)
+			//trust.Infof("KMemoryGetFreePage: found free page %d", i)
 			return KMemorySetInUse(i)
 		}
 	}
@@ -84,8 +104,7 @@ func pageNumberToBits(kPage int) uint64 {
 	index := kPage >> 3
 	shift := kPage % 64
 	bit := uint64(1) << shift
-	comp := ^bit
-	result := KMemInUse[index] & comp
+	result := KMemInUse[index] & bit
 	return result >> shift
 }
 
@@ -110,11 +129,11 @@ func KMemoryChangeState(kPage int, isSet bool) (unsafe.Pointer, JoyError) {
 	bit := uint64(1) << shift
 	if isSet {
 		KMemInUse[index] |= bit
-		trust.Infof("KMemorySetInUse: allocated page %d", kPage)
+		//trust.Infof("KMemorySetInUse: allocated page %d", kPage)
 	} else {
 		comp := ^bit
 		KMemInUse[index] &= comp
-		trust.Infof("KMemorySetInUse: freed page %d", kPage)
+		//trust.Infof("KMemorySetInUse: freed page %d", kPage)
 	}
-	return unsafe.Pointer(uintptr(KRamStart) + uintptr(kPage*PageSize)), JoyNoError
+	return unsafe.Pointer(uintptr(KRamStart) + (uintptr(kPage) * uintptr(KPageSize))), JoyNoError
 }

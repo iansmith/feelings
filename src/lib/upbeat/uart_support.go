@@ -28,7 +28,7 @@ func Hex32string(uart *machine.UART, d uint32) {
 	uart.WriteByte(0x20)
 }
 
-// Hex32string is for dumping a 64bit int without using fmt
+// Hex64string is for dumping a 64bit int without using fmt
 func Hex64string(uart *machine.UART, d uint64) {
 	var rb uint64
 	var rc uint64

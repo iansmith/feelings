@@ -13,20 +13,6 @@ ifndef HOSTGO
 $(error HOSTGO variable is not set, see enable-feelings.sample)
 endif
 
-
-ifndef FEELINGS
-$(error FEELINGS variable is not set, see enable-feelings.sample)
-endif
-ifndef TINYGO
-$(error TINYGO variable is not set, see enable-feelings.sample)
-endif
-ifndef LLVM
-$(error LLVM variable is not set, see enable-feelings.sample)
-endif
-ifndef HOSTGO
-$(error HOSTGO variable is not set, see enable-feelings.sample)
-endif
-
 EXCEPTIONASM=exception
 FONTDIR=$(FEELINGS)/src/lib/upbeat
 TINYGO_TINYGO=$(TINYGO)/build/tinygo
@@ -36,21 +22,31 @@ TINYGO_CLANG=$(LLVM)/bin/clang
 NAME=joy
 TINYGO_CLANG=$(LLVM)/bin/clang
 TARGET=aarch64-none-elf
+GEN=../../../tools/genfuncptr/cmd/genfuncptr/genfuncptr
+FUNCPTRS=funcptrs
 
 font.psf: $(FONTDIR)/font.psf
 	cp $(FONTDIR)/font.psf .
 
 font.o: font.psf
-	$(TINYGO_LLD) -v -m aarch64elf -r -b binary -o font.o font.psf
+	$(TINYGO_LLD) -m aarch64elf -r -b binary -o font.o font.psf
+
+$(FUNCPTRS).o: $(FUNCPTRS).S
+	$(TINYGO_CLANG) -target $(TARGET) -c -o $(FUNCPTRS).o $(FUNCPTRS).S
+
+$(FUNCPTRS).S: funcnames.list
+	$(GEN) funcnames.list funcptrs.S
 
 $(EXCEPTIONASM).o: ../../$(EXCEPTIONASM).S
 	$(TINYGO_CLANG) -target $(TARGET) -c -o $(EXCEPTIONASM).o ../../$(EXCEPTIONASM).S
 
-$(NAME): *.go $(EXCEPTIONASM).o font.o
-	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='font.o $(EXCEPTIONASM).o' -cflags='-g' -target $(NAME)_qemu.json -o $(NAME) .
+OBJS=font.o $(EXCEPTIONASM).o $(FUNCPTRS).o
 
-$(NAME).hardware: *.go $(EXCEPTIONASM).o font.o
-	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='font.o $(EXCEPTIONASM).o' -target $(NAME).json -o $(NAME).hardware .
+$(NAME): *.go $(EXCEPTIONASM).o font.o $(FUNCPTRS).o
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='$(OBJS)' -cflags='-g' -target $(NAME)_qemu.json -o $(NAME) .
+
+$(NAME).hardware: *.go $(EXCEPTIONASM).o font.o $(FUNCPTRS).o
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='$(OBJS)' -target $(NAME).json -o $(NAME).hardware .
 
 clean:
 	rm kernel8.img $(NAME) $(NAME).hardware *.o >/dev/null 2>/dev/null || true

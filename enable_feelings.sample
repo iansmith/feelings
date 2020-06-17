@@ -1,18 +1,45 @@
-# adjust the lines below for your system
-# and then source this file anytime you plan to work with feelings
+#  1) copy this file to enable_feelings (that file is .gitignored)
+#  2) alter the values in this file to suit your local dev system
+# 3*) source this file anytime you plan to work with feelings
 
-BASE=/Users/iansmith/rpi3                              #if you keep it all together
-export HOSTGO=/Users/iansmith/.enable/go1.14.1.src     #for build tools on host, like sysdec
-TOOLS=$BASE/aarch64/bin                                #debugger, qemu
+## this is useful if you keep all your files in a single place, but it is not
+## necessary to use, since it just keeps the other vars short
+BASE=/Users/iansmith/rpi3
 
-export TINYGO=$BASE/tinygo                      #where tinygo in installed
-export FEELINGS=/Users/iansmith/feelings        #where feelings is installed
-export LLVM=$TINYGO/llvm-build/                 #llvm binaries, like objcopy or clang
-                                                #it's best to use one included with tinygo
+# this is the pointer to the go installation on your HOST system, probably OSX
+# or linux. You need the go compiler for the host side of anticipaton, "release",
+# as well as some build-time tools, like sysdec.
+export HOSTGO=/Users/iansmith/.enable/go1.14.1.src
+
+# this points to the directory where your tools are installed, typically the
+# qemu emulator and the gdb (or lldb) debugger.  we *do* use the path for these
+# tools.
+TOOLS=$BASE/aarch64
+
+## points to your tiny go installation. This should point to a directory that
+## has the README.md file and the `src` directory.
+export TINYGO=$BASE/tinygo
+
+## points to to the root of the feelings install, e.g. the directory that contains
+## this file.
+export FEELINGS=/Users/iansmith/feelings
+
+## this is where the LLVM binaries are located. we use things like objcopy,
+## clang for assembly, and ld for installation of data into binaries.  If you
+## installed tinygo from source, you probably can leave this unchanged since
+## it points to the LLVM shipped tinygo.  If you did not install tinygo
+## from source, you would be wise to investigate what version of LLVM your
+## tinygo expects--probably version 10--so you can be sure you are using an
+## LLVM that is compatible.
+export LLVM=$TINYGO/llvm-build/
 
 #try not to put much in your path. we try not to use the path, but we might
 #have a ref to it and you dont want "clang" to refer to something unexpected.
-export PATH=$TOOLS:\
+
+# brew is the root of all evil.  don't use it unless it absolutely necessary because
+# it is likely to install something that breaks feelings without you even doing
+# it explicitly.
+export PATH=$TOOLS/bin:\
 $TINYGO/build:\
 $FEELINGS/bin:\
 $LLVM/bin:\

@@ -1,4 +1,4 @@
-all: clean release
+all: clean genfuncptr
 
 ifndef FEELINGS
 $(error FEELINGS variable is not set, see enable-feelings.sample)
@@ -16,14 +16,13 @@ endif
 GOCOMP=$(HOSTGO)/bin/go
 
 #
-# NOTE: Built with system go compiler, probably should be go1.14. Targeted for the
-# NOTE: host system to push a file to the device over serial.
+# NOTE: Built with host system go compiler, probably should be go1.14.
 #
-release: *.go
-	GO111MODULE=off GOPATH=$(FEELINGS) $(GOCOMP) build -o release .
+genfuncptr: *.go
+	GO111MODULE=off GOPATH=$(FEELINGS) $(GOCOMP) build -o genfuncptr .
 
 clean:
-	rm release *.o >/dev/null 2>/dev/null || true
+	rm genfuncptr *.o >/dev/null 2>/dev/null || true
 
 ##
 ## NOTE: This /dev/ttys004 depends on your system state when you run

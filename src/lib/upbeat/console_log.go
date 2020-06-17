@@ -38,6 +38,16 @@ type FBConsole struct {
 	maxY     uint32
 }
 
+// clear the display
+func (f *FBConsole) Clear() {
+	for i := uint32(0); i < f.info.Width; i++ {
+		for j := uint32(0); j < f.info.Height; j++ {
+			dest := (*byte)(unsafe.Pointer(uintptr((i * f.info.Pitch) + (j * 4))))
+			*dest = 0
+		}
+	}
+}
+
 // display a string on screen
 func (f *FBConsole) print(s string) {
 	start := (*uint8)(unsafe.Pointer(&binary_font_psf_start))

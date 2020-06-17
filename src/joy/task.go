@@ -1,9 +1,5 @@
 package joy
 
-import (
-	"unsafe"
-)
-
 const MemoryMappedIO = 0x3F00_0000
 
 //
@@ -83,37 +79,4 @@ func makeTaskList() TaskList {
 
 func (t *TaskListImpl) CopyProcess() bool {
 	return false
-}
-
-//
-// Memory
-//
-const PageShift = 12
-const TableShift = 9
-const SectionShift = PageShift + TableShift
-const PageSize = 1 << PageShift
-const SectionSize = 1 << SectionShift
-const LowMemory = 2 * SectionSize
-const HighMemory = uint64(MemoryMappedIO)
-const PagingMemory = HighMemory - LowMemory
-const PagingPages = PagingMemory / PageSize
-
-type Pager interface {
-	GetFreePage() unsafe.Pointer
-}
-
-var memMap [PagingPages]uint16 //xxx shouldn't this be a bitmask? or at least uint8?
-
-func getFreePage() unsafe.Pointer {
-	for i := uint64(0); i < uint64(PagingPages); i++ {
-		if memMap[i] == 0 {
-			memMap[i] = 1
-			return (unsafe.Pointer)(uintptr((LowMemory + i*PageSize)))
-		}
-	}
-	return nil
-}
-
-func freePage(ptr unsafe.Pointer) {
-	memMap[(uintptr(ptr)-LowMemory)/PageSize] = 0
 }

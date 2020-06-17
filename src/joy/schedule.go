@@ -9,7 +9,7 @@ import (
 	"lib/upbeat"
 )
 
-const quanta = 100000
+const quanta = 500000
 
 func EnableIRQAndFIQ() {
 	upbeat.UnmaskDAIF()
@@ -43,7 +43,14 @@ func InitGIC() {
 }
 
 func timerTick() {
-	CurrentDomain.Counter--
+	if CurrentDomain == nil {
+		trust.Fatalf(1, "got a timer tick with no current domain!")
+	}
+	if CurrentDomain.Counter > 0 {
+		CurrentDomain.Counter--
+	}
+	trust.Debugf("timerTick with current counter: %d (premempt count %d)", CurrentDomain.Counter,
+		CurrentDomain.PreemptCount)
 	if CurrentDomain.Counter > 0 || CurrentDomain.PreemptCount > 0 {
 		return
 	}
@@ -72,15 +79,18 @@ func scheduleInternal() {
 				next = i
 			}
 		}
+		trust.Debugf("looked at %d domains, c is %d", len(Domain), c)
 		if c > 0 {
 			break
 		}
-		for i := uint16(0); i < DomainsRunning; i++ {
+		for i := uint16(0); i < uint16(len(Domain)); i++ {
 			p = Domain[i]
 			if p != nil {
 				p.Counter = (p.Counter >> 1) + p.Priority
+				trust.Debugf("updated counter on %d: %d (from prio %d)", i, p.Counter, p.Priority)
 			}
 		}
+		trust.Debugf("updated counters for all domains")
 	}
 	trust.Debugf("switching to domain: %d", next)
 	switchToDomain(Domain[next])
@@ -93,8 +103,8 @@ func switchToDomain(next *DomainControlBlock) {
 	}
 	prev := CurrentDomain
 	CurrentDomain = next
-	tmp := DomainControlBlock{}
-	cpuSwitchTo(unsafe.Pointer(prev), unsafe.Pointer(next), unsafe.Offsetof(tmp.RSS))
+	trust.Debugf("xxxx switch %d, %d, %#v", next.Counter, next.Priority, next.RSS)
+	cpuSwitchTo(unsafe.Pointer(prev), unsafe.Pointer(next), 0)
 }
 
 //go:external
