@@ -6,7 +6,7 @@ import (
 	"log"
 )
 
-//neds to be all 1s on right, can't be larger than 255
+//needs to be all 1s on right, can't be larger than 255
 const FileXFerDataLineSize = uint16(0x7f)
 
 type EncodeDecodeError struct {
