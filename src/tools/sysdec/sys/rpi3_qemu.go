@@ -4,8 +4,6 @@ package sys
 
 import "tools/sysdec"
 
-//Raspberry PI 3 B+ on Qemu emulation, System View Description
-//
 //Sources:
 //BCM2835 ARM Peripherals Datasheet
 //https://elinux.org/BCM2835_datasheet_errata

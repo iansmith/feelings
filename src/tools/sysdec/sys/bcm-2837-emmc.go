@@ -655,7 +655,7 @@ interrupts in the INTERRUPT register to generate an interrupt on the
 int_to_arm output.`,
 			AddressOffset: 0x3C,
 			Size:          24,
-			Access:        sysdec.Access("rw"),
+			Access:        sysdec.Access("r"),
 			Field: map[string]*sysdec.FieldDef{
 				"TunedClockIsUsed": {
 					Description: `Tuned clock is used for sampling data.
@@ -665,7 +665,7 @@ int_to_arm output.`,
 				"ClockIsTuning": {
 					Description: `Start tuning the SD clock: 0 not tuned,
 or tuning complete, 1=tuning`,
-					BitRange: sysdec.BitRange(23, 23),
+					BitRange: sysdec.BitRange(22, 22),
 				},
 				"UHSMode": {
 					Description: `Select the speed mode of the SD card: 
@@ -684,12 +684,17 @@ other = reserved`,
 						"DDR50":  {Value: 0b100},
 					},
 				},
-				"AutoCommandError": {
-					Description: `Command index error occurred during auto 
-command execution: 0 = no error, 1 = error`,
+				"NotC12Err": {
+					Description: `Error occurred during auto cmd 12 execution
+0=no error, 1=error`,
+					BitRange: sysdec.BitRange(7, 7),
+				},
+				"ACBadErr": {
+					Description: `Error occurred during auto command execution
+0=no error, 1=error`,
 					BitRange: sysdec.BitRange(4, 4),
 				},
-				"AutoCommandEndBitNot1": {
+				"ACEndErr": {
 					Description: `End bit is not 1 during auto command 
 execution: 0 = no error 1 = error`,
 					BitRange: sysdec.BitRange(3, 3),
@@ -726,12 +731,12 @@ events for debugging.`,
 				"DataEndNot1": {
 					Description: `Create end bit on data line not 1: 0 = no
 1 = yes`,
-					BitRange: sysdec.BitRange(22, 23),
+					BitRange: sysdec.BitRange(22, 22),
 				},
 				"DataCRC": {
 					Description: `Create data CRC error: 0 = no
 1 = yes`,
-					BitRange: sysdec.BitRange(21, 23),
+					BitRange: sysdec.BitRange(21, 21),
 				},
 				"DataTimeout": {
 					Description: `Create timeout on data line: 0 = no

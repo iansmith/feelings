@@ -1,28 +1,41 @@
-#  1) copy this file to enable_feelings (that file is .gitignored)
-#  2) alter the values in this file to suit your local dev system
-# 3*) source this file anytime you plan to work with feelings
-
-## this is useful if you keep all your files in a single place, but it is not
-## necessary to use, since it just keeps the other vars short
-BASE=/Users/iansmith/rpi3
+# This file should be SOURCED into your environment, not executed
+#
+# This file assumes you used git@github.com/iansmith/feelingsfromscratch
+# to create your core tools.  That directory is refferred to as FFS.
+export FFS=/Users/iansmith/ffs
 
 # this is the pointer to the go installation on your HOST system, probably OSX
 # or linux. You need the go compiler for the host side of anticipaton, "release",
 # as well as some build-time tools, like sysdec.
-export HOSTGO=/Users/iansmith/.enable/go1.14.1.src
+export HOSTGO=$FFS/hostgo
 
 # this points to the directory where your tools are installed, typically the
-# qemu emulator and the gdb (or lldb) debugger.  we *do* use the path for these
-# tools.
-TOOLS=$BASE/aarch64
+# qemu emulator and the gdb debugger are the things you'll care the most about.
+TOOLS=$FFS/tools
 
 ## points to your tiny go installation. This should point to a directory that
 ## has the README.md file and the `src` directory.
-export TINYGO=$BASE/tinygo
+export TINYGO=$FFS/tinygo
 
 ## points to to the root of the feelings install, e.g. the directory that contains
 ## this file.
 export FEELINGS=/Users/iansmith/feelings
+
+#because you built pkg-config from source with the correct path already in it,
+#when you have the feelings pkg-config in your path, it should "just work"
+#to override the system one. but just in case...
+#macos pkg config path if you need it
+#export PKG_CONFIG_PATH=$FFS/tools/lib/pkgconfig:/usr/local/lib/pkgconfig
+#linux pkg config path if you need it
+#export PKG_CONFIG_PATH=$FFS/tools/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig
+
+# dynamic libaries should "just work" since you built from source, but in case you
+# had some kind of trouble
+# linux dynamic load path example
+export LD_LIBRARY_PATH=$FFS/tools/lib:/usr/lib/x86_64-linux-gnu
+# MacOS dynamic load path example
+export DYLD_LIBRARY_PATH=$FFS/tools/lib:/usr/local/lib:/usr/lib
+
 
 ## this is where the LLVM binaries are located. we use things like objcopy,
 ## clang for assembly, and ld for installation of data into binaries.  If you
@@ -35,13 +48,9 @@ export LLVM=$TINYGO/llvm-build/
 
 #try not to put much in your path. we try not to use the path, but we might
 #have a ref to it and you dont want "clang" to refer to something unexpected.
-
-# brew is the root of all evil.  don't use it unless it absolutely necessary because
-# it is likely to install something that breaks feelings without you even doing
-# it explicitly.
 export PATH=$TOOLS/bin:\
 $TINYGO/build:\
 $FEELINGS/bin:\
 $LLVM/bin:\
 $HOSTGO/bin:\
-/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:
+/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin: # this path is for MacOS running catalina
