@@ -165,10 +165,10 @@ bootloader_params:
 start:
 	//stack pointer is in the structure, but put into sp and store in _stack_top
 	ldr x5,[x0,#24]
-	str sp, x5
-	adrp x6, _stack_top
-	add x6,x6,#:lo12:_stack_top
-	str x5,[x6]
+	mov sp, x5
+//	adrp x6, _stack_top
+//	add x6,x6,#:lo12:_stack_top
+//	str x5,[x6]
 
 
 	// heap start is in the struction

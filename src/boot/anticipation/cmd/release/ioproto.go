@@ -17,17 +17,17 @@ import (
 // only provides the implementation.
 ////////////////////////////////////////////////////////////////////////////////
 type ioProto interface {
-	Data(s string, data []uint8) error             //data is the original data (for cross check)
-	DataInflate(s string, data uint16) error       // data is number of inflated bytes
-	EntryPoint(s string, addr uint32) error        // addr is the lower 32bits of entry point
-	BigEntryPoint(s string, addr uint32) error     // addr is the upper 32bits of entry point
-	BaseAddrESA(s string, addr uint32) error       //  addr is 32bit base addr
-	BigBaseAddr(s string, addr uint32) error       //addr is upper 32 bits of  base addr
-	BaseAddrELA(s string, addr uint32) error       //addr is lower 32 bits of  base addr
-	ExtensionUnixTime(s string, addr uint32) error //ticks in secs from epoch
-	Read([]uint8) (string, error)                  //read the next thing from the other side
-	NewSection(*elf.Section) error                 //just a notification
-	EOF() (string, error)                          //just a notification
+	Data(s string, data []uint8) error              //data is the original data (for cross check)
+	DataInflate(s string, data uint16) error        // data is number of inflated bytes
+	EntryPoint(s string, addr uint32) error         // addr is the lower 32bits of entry point
+	BigEntryPoint(s string, addr uint32) error      // addr is the upper 32bits of entry point
+	BaseAddrESA(s string, addr uint32) error        //  addr is 32bit base addr
+	BigBaseAddr(s string, addr uint32) error        //addr is upper 32 bits of  base addr
+	BaseAddrELA(s string, addr uint32) error        //addr is lower 32 bits of  base addr
+	ExtensionSetParams(s string, p [4]uint64) error //for kernel info
+	Read([]uint8) (string, error)                   //read the next thing from the other side
+	NewSection(*elf.Section) error                  //just a notification
+	EOF() (string, error)                           //just a notification
 }
 
 ///////////////////////////////////////////////////////////////////////
@@ -123,7 +123,7 @@ func (t *ttyIOProto) Read(data []uint8) (string, error) {
 	}
 }
 
-func (t *ttyIOProto) ExtensionUnixTime(l string, _ uint32) error {
+func (t *ttyIOProto) ExtensionSetParams(l string, _ [4]uint64) error {
 	t.sendString(l)
 	return nil
 }
@@ -219,4 +219,7 @@ func (v *verifyIOProto) Read(buffer []byte) (string, error) { //just update to n
 }
 func (v *verifyIOProto) EOF() (string, error) {
 	return EOFLine, nil
+}
+func (v *verifyIOProto) ExtensionSetParams(_ string, _ [4]uint64) error {
+	return nil
 }

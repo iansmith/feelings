@@ -49,3 +49,7 @@ export LLVM=$TINYGO/llvm-build/
 #try not to put much in your path. we try not to use the path, but we might
 #have a ref to it and you dont want "clang" to refer to something unexpected.
 export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin: # this path is for MacOS running catalina
+
+# you may want to alias things you use from the command line
+#alias gdb=$TOOLS/bin/aarch64-elf-gdb
+#alias objdump=$LLVM/bin/llvm-objdump

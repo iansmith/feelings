@@ -3,7 +3,6 @@ package joy
 import (
 	"fmt"
 	tgr "runtime"
-	"unsafe"
 
 	"device/arm"
 	"machine"
@@ -22,29 +21,19 @@ func KernelMain() {
 	tgr.ReInit()
 	initExceptionVector()
 
-	trust.Debugf("bootloader: entry point: %x", upbeat.BootloaderParams.EntryPoint)
-	trust.Debugf("bootloader: kernel last: %x", upbeat.BootloaderParams.KernelLast)
-	trust.Debugf("bootloader: unix time: %x", upbeat.BootloaderParams.UnixTime)
-	trust.Debugf("bootloader: stack pointer: %x", upbeat.BootloaderParams.StackPointer)
-
 	err := KMemoryInit()
 	if err != JoyNoError {
 		panic(JoyErrorMessage(err))
 	}
 	InitDomains()
-	s := (*uint64)(unsafe.Pointer(&heap_start))
-	e := (*uint64)(unsafe.Pointer(&heap_end))
-	trust.Debugf("initialized domains: %p (startHeap %x, endHeap %x)", CurrentDomain, *s, *e)
 	InitGIC()
 	InitSchedulingTimer()
 
-	trust.Debugf("about to copy domain ZERO whose prio is ... %d", CurrentDomain.Priority)
 	err = DomainCopy(displayInfoPtr, 0)
 	if err != JoyNoError {
 		trust.Errorf("unable to start display info process:", JoyErrorMessage(err))
 		return
 	}
-	trust.Debugf("about to copy second process (domain zero prio is %d)", CurrentDomain.Priority)
 	err = DomainCopy(terminalTestPtr, 0)
 	if err != JoyNoError {
 		trust.Errorf("unable to start terminal test process:", JoyErrorMessage(err))
@@ -81,6 +70,8 @@ var displayInfoPtr FuncPtr
 
 //go:export joy.displayInfo
 func displayInfo(_ uintptr) {
+	tgr.ReInit()
+
 	var size, base uint32
 	logger := initVideo()
 	sleepForFew()
@@ -153,6 +144,7 @@ func sleepForFew() {
 
 //go:export joy.terminalTest
 func terminalTest(ptr uintptr) {
+	tgr.ReInit()
 	ct := 0
 	for {
 		fmt.Printf("terminal test: hi! #%d\n", ct)

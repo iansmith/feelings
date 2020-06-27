@@ -11,12 +11,17 @@ import (
 	"io"
 	"log"
 	"os"
-	"unsafe"
 )
 
 const uint64signal = uint64(0x1234567887654321)
 const KernelLoadPoint = 0xfffffc0000000000
 const PageSize = 0x10000
+
+// this is the place in the KERNEL where we are going to place a copy of
+// the structure BootloaderParamsDef... the bootloaderParamsCopy is just to
+// make it easier to set the fields
+var bootloaderParamsLocation uint64 //ptr
+var bootloaderParamsCopy BootloaderParamsDef
 
 type transmitState int
 
@@ -35,9 +40,6 @@ type BootloaderParamsDef struct {
 	HeapStart    uint64
 	HeapEnd      uint64
 }
-
-var bootloaderParamsLocation unsafe.Pointer
-var bootloaderParamsCopy BootloaderParamsDef
 
 ///////////////////////////////////////////////////////////////////////
 // loadableSect is how we match up program headers to sections
@@ -125,7 +127,7 @@ func main() {
 	}
 	for _, sym := range symbols {
 		if sym.Name == "bootloader_params" {
-			bootloaderParamsLocation = unsafe.Pointer(uintptr(sym.Value))
+			bootloaderParamsLocation = uint64(uintptr(sym.Value))
 			break
 		}
 	}
@@ -226,8 +228,9 @@ func protocol(filename string, fp *elf.File, lsect []*loadableSect, oh ioProto) 
 		se := newSectionEmitter(s, l, oh)
 		emitterList[i] = se
 	}
-	//last emmitter does the boot parameter magic
-	emitterList[len(lsect)] = newContstantParamsEmitter(bootloaderParamsLocation, &bootloaderParamsCopy, oh)
+	//last emmitter does the boot parameter copying magic
+	emitterList[len(lsect)] = newContstantParamsEmitter(bootloaderParamsLocation,
+		&bootloaderParamsCopy, oh)
 	//we need to set the bootloader params
 	bootloaderParamsCopy.UnixTime = uint64(time.Now().Unix())
 	page := uint64(KernelLoadPoint)
@@ -236,16 +239,16 @@ func protocol(filename string, fp *elf.File, lsect []*loadableSect, oh ioProto) 
 		page += PageSize
 	}
 	// kernel code takes N pages
-	// kernel stack takes 1 page (N+1)
-	// kernel heap takes 2 pages (N+2,N+3)
-	page += PageSize
+	// kernel stack takes 2 page (N+1, N+2
+	// kernel heap takes 8 pages (N+3...N+10)
+	page += (2 * PageSize)
 	//this is the "wrong" end of the stack page (if stack reaches here, we are hosed)
-	bootloaderParamsCopy.StackPointer = page
+	bootloaderParamsCopy.StackPointer = page + (PageSize - 0x10) //16 byte alignment required
 	page += PageSize
 	bootloaderParamsCopy.HeapStart = page
-	page += PageSize
-	bootloaderParamsCopy.HeapEnd = page + (PageSize - 8) //END of second page
-	log.Printf("kernel boot parameters: %#v and address %p", bootloaderParamsCopy, bootloaderParamsLocation)
+	page += (7 * PageSize)
+	bootloaderParamsCopy.HeapEnd = page + (PageSize - 8) //END of N+10th page
+	log.Printf("kernel boot parameters: %#v and address %x", bootloaderParamsCopy, bootloaderParamsLocation)
 	if len(emitterList) < 2 {
 		log.Fatalf("unable to find any data to release! No sections for transmission!")
 	}
@@ -258,6 +261,13 @@ func protocol(filename string, fp *elf.File, lsect []*loadableSect, oh ioProto) 
 	if *verbose > 0 {
 		log.Printf("@@@ file %s, sect %s", filename, tx.current.name())
 	}
+
+	//right now, we only use the first of 4 params
+	tx.param[kernelParamAddressBlockAddr] = bootloaderParamsLocation
+	tx.param[1] = 0
+	tx.param[2] = 0
+	tx.param[3] = 0
+
 	name := tx.current.name()
 	copyOfSect := fp.Section(name)
 	tx.current.receiver().NewSection(copyOfSect)
@@ -301,7 +311,7 @@ outer:
 		case '.':
 			tx.errorCount = 0 //no more consecutive errors
 			switch tx.state {
-			case tsTime:
+			case tsParams:
 				tx.next() //called for effect
 				sendLineToDevice(tx)
 			case tsData:

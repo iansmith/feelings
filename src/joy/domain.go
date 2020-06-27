@@ -76,7 +76,7 @@ var DomainZero = DomainControlBlock{
 		0, 0, 0, 0, 0, 0},
 	State:        DomainStateRunning,
 	Counter:      0,
-	Priority:     100,
+	Priority:     5,
 	PreemptCount: 0,
 	Stack:        0,
 	Flags:        uint64(DomainFlagKernelThread),
@@ -108,33 +108,27 @@ func PermitPreemption() {
 
 func DomainCopy(fn FuncPtr, arg uint64) JoyError {
 	DisallowPreemption()
-	var sp = new(uint64)
-	trust.Debugf("domain being copied (source is %p, prio is %d),%p",
-		CurrentDomain, CurrentDomain.Priority, sp)
 
-	newStack, err := KMemoryGetFreePage()
+	newStack1st, newStackLast, err := KMemoryGetFreeContiguousPages(KernelProcStackPages)
 	if err != JoyNoError {
 		return err
 	}
-	top := uintptr(newStack) + uintptr(KPageSize-16)
-	trust.Debugf("domain being allocated (new one) is at %p (? %d) and current=%p", newStack,
-		CurrentDomain.Priority, CurrentDomain)
-	newDomain := (*DomainControlBlock)(unsafe.Pointer(uintptr(newStack)))
-	trust.Debugf("cast pointer (? %d) %p", CurrentDomain.Priority, CurrentDomain)
+	top := uintptr(newStackLast) + uintptr(KPageSize-16)
+	trust.Debugf("domain being allocated (new one) -- stack root is at %x ",
+		"(prio? %d) and current=%x", newStack1st, CurrentDomain.Priority, CurrentDomain)
+	newDomain := (*DomainControlBlock)(unsafe.Pointer(uintptr(newStack1st)))
 
-	newHeap, err := KMemoryGetFreePage()
+	newHeap1st, newHeapLast, err := KMemoryGetFreeContiguousPages(KernelProcHeapPages)
 	if err != JoyNoError {
 		return err
 	}
-	newHeapEnd := unsafe.Pointer(uintptr(newHeap) + uintptr(KPageSize))
+	newHeapEnd := unsafe.Pointer(uintptr(newHeapLast) + uintptr(KPageSize))
 
-	trust.Debugf("in Domain copy we have current domain %p, heap is %p, and prio  is %d",
-		CurrentDomain, newHeap, CurrentDomain.Priority)
 	newDomain.Priority = CurrentDomain.Priority
 	newDomain.State = DomainStateRunning
 	newDomain.Counter = newDomain.Priority
 	newDomain.PreemptCount = 1
-	newDomain.HeapStart = newHeap
+	newDomain.HeapStart = newHeap1st
 	newDomain.HeapEnd = newHeapEnd
 	newDomain.RSS.X19 = uint64(fn)
 	newDomain.RSS.X20 = arg

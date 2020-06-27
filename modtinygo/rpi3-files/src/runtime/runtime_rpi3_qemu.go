@@ -22,7 +22,7 @@ func ReInit() {
 	heapStart = uintptr(*tmp)
 	tmp=((*uint64)(unsafe.Pointer(&heapEndSymbol)))
 	heapEnd = uintptr(*tmp)
-	tmp:=((*uint64)(unsafe.Pointer(&stackTopSymbol)))
+	tmp=((*uint64)(unsafe.Pointer(&stackTopSymbol)))
 	stackTop = uintptr(*tmp)
 
 	heapptr = heapStart

@@ -8,7 +8,7 @@ import (
 )
 
 //needs to be all 1s on right, can't be larger than 255
-const FileXFerDataLineSize = uint16(0x7f)
+const FileXFerDataLineSize = uint16(0xff)
 
 type EncodeDecodeError struct {
 	s string
@@ -124,8 +124,6 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 		elaAddr := uint32(converted[4])*256 + uint32(converted[5])
 		elaAddr = elaAddr << 16 //data supplied is high order 16 of 32
 		bb.SetBaseAddr(elaAddr) //but this sets the lower order 32 of 64
-		fmt.Printf("ExtendedLinearAddress %08x [%16x]\n", elaAddr, bb.BaseAddress())
-
 		return false, false
 	case ExtensionSetParameters: //4 64 bit integers
 		length := converted[0]
@@ -140,7 +138,7 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 				//4 is because of four constant valuesat left of converted[]
 				//i*8 is which param
 				//7-p is byte
-				value += (placeValue * uint64(converted[(4)+(i*8)+(7-i)]))
+				value += (placeValue * uint64(converted[(4)+(i*8)+(7-p)]))
 			}
 			bb.SetParameter(i, value)
 		}
@@ -153,7 +151,6 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 		}
 		t := uint32(converted[4])*0x1000000 + uint32(converted[5])*0x10000 + uint32(converted[6])*0x100 + uint32(converted[7])
 		bb.SetBigBaseAddr(t)
-		fmt.Printf("ExtensionBigLinearAddress %08x [%16x]\n", t, bb.BaseAddress())
 		return false, false
 	case ExtensionBigEntryPoint: //32 bit int which is the HIGH order of 64bit pointer
 		length := converted[0]
@@ -163,7 +160,6 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 		}
 		t := uint32(converted[4])*0x1000000 + uint32(converted[5])*0x10000 + uint32(converted[6])*0x100 + uint32(converted[7])
 		bb.SetBigEntryPoint(t)
-		fmt.Printf("ExtensionBigEntryPoint %08x [%16x]\n", t, bb.EntryPoint())
 		return false, false
 	case StartLinearAddress: //32 bit addr
 		length := converted[0]
@@ -173,7 +169,6 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 		}
 		slaAddr := uint32(converted[4])*0x1000000 + uint32(converted[5])*0x10000 + uint32(converted[6])*0x100 + uint32(converted[7])
 		bb.SetEntryPoint(slaAddr)
-		fmt.Printf("StartLinearAddress %08x [%16x]\n", slaAddr, bb.EntryPoint())
 		return false, false
 	}
 
@@ -181,7 +176,7 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 	return false, true
 }
 
-// take in a string and return either an exception or a
+// take in a string and return either an exception or a well formed value
 func DecodeAndCheckStringToBytes(s string) ([]byte, HexLineType, uint32, error) {
 	lenAs16 := uint16(len(s))
 	converted := ConvertBuffer(lenAs16, []byte(s))
@@ -214,7 +209,7 @@ func ValidBufferLength(l uint16, converted []byte) bool {
 	}
 	total += uint16(converted[0]) * 2
 	if l != total {
-		print("!bad buffer length, expected ", total, " but got", l, " based on ", (total*2)+uint16(converted[0]), "\n")
+		print("!bad buffer length, expected ", total, " but got", l, " based on ", total*2, "\n")
 		return false
 	}
 	return true
@@ -231,7 +226,8 @@ func CheckChecksum(l uint16, converted []byte) bool {
 	complement++
 	checksum := uint8(complement & 0xff)
 	if checksum != 0 {
-		print("!bad checksum! expected 0 and got ", checksum, " from declared checksum of ", converted[limit-1], "\n")
+		print("!bad checksum! expected 0 and got ", checksum,
+			" from declared checksum of ", converted[limit-1], "\n")
 		return false
 	}
 	return true
@@ -432,15 +428,15 @@ func EncodeESA(base uint16) string {
 	return buf.String()
 }
 
-// this takes 4 64 bit integers
+// this takes 4 64 bit integers (32 bytes)
 func EncodeExtensionSetParameters(v [4]uint64) string {
 	buf := bytes.Buffer{}
 	valueBuffer := bytes.Buffer{} //for checksum ease
-	buf.WriteString(fmt.Sprintf(":400000%02X", int(ExtensionSetParameters)))
+	buf.WriteString(fmt.Sprintf(":200000%02X", int(ExtensionSetParameters)))
 	for i := 0; i < 4; i++ {
 		value := v[i]
 		for p := 7; p >= 0; p-- {
-			b := byte(value & (0xff >> (p * 8)))
+			b := byte((value >> (p * 8)) & 0xff)
 			valueBuffer.WriteByte(b)
 		}
 		buf.WriteString(fmt.Sprintf("%016X", value))

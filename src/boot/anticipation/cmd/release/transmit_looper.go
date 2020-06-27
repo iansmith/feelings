@@ -4,16 +4,18 @@ import (
 	"boot/anticipation"
 	"log"
 	"strings"
-	"time"
 )
 
 ///////////////////////////////////////////////////////////////////////
 // transmitLooper
 ///////////////////////////////////////////////////////////////////////
 const (
-	tsData transmitState = 0
-	tsTime transmitState = 1
-	tsEnd  transmitState = 2
+	tsData   transmitState = 0
+	tsParams transmitState = 1
+	tsEnd    transmitState = 2
+)
+const (
+	kernelParamAddressBlockAddr = 0 // points to BootloaderParamsDef *inside* the kernel
 )
 
 // transmitLooper knows how to speak the line oriented protocol with the device
@@ -39,6 +41,7 @@ type transmitLooper struct {
 	current      emitter
 	emitters     []emitter
 	inBuffer     []uint8
+	param        [4]uint64
 	in           ioProto
 	errorCount   int //in a row
 	successCount int //overall
@@ -62,12 +65,12 @@ func (t *transmitLooper) next() bool {
 	if t.state == tsEnd { // are we done done?
 		log.Fatalf("bad state, transmitLooper should know its done!")
 	}
-	if t.state == tsTime {
+	if t.state == tsParams {
 		t.state = tsEnd
 		return true
 	}
 	if t.emitterIndex == len(t.emitters) { //sections done?
-		t.state = tsTime
+		t.state = tsParams
 		return false
 	}
 	t.current = t.emitters[t.emitterIndex]
@@ -96,10 +99,9 @@ func (t *transmitLooper) line() (string, error) {
 		return EOFLine, nil
 	case tsData:
 		return t.current.line()
-	case tsTime:
-		now := uint32(time.Now().Unix())
-		l := anticipation.EncodeExtensionUnixTime(now)
-		return l, t.in.ExtensionUnixTime(l, now)
+	case tsParams:
+		l := anticipation.EncodeExtensionSetParameters(t.param)
+		return l, t.in.ExtensionSetParams(l, t.param)
 	}
 	panic("unexpected state for transmitLooper")
 }

@@ -9,7 +9,7 @@ import (
 	"lib/upbeat"
 )
 
-const quanta = 500000
+const quanta = 4000000
 
 func EnableIRQAndFIQ() {
 	upbeat.UnmaskDAIF()
@@ -79,7 +79,6 @@ func scheduleInternal() {
 				next = i
 			}
 		}
-		trust.Debugf("looked at %d domains, c is %d", len(Domain), c)
 		if c > 0 {
 			break
 		}
@@ -90,7 +89,6 @@ func scheduleInternal() {
 				trust.Debugf("updated counter on %d: %d (from prio %d)", i, p.Counter, p.Priority)
 			}
 		}
-		trust.Debugf("updated counters for all domains")
 	}
 	trust.Debugf("switching to domain: %d", next)
 	switchToDomain(Domain[next])
@@ -103,7 +101,7 @@ func switchToDomain(next *DomainControlBlock) {
 	}
 	prev := CurrentDomain
 	CurrentDomain = next
-	trust.Debugf("xxxx switch %d, %d, %#v", next.Counter, next.Priority, next.RSS)
+	trust.Debugf("----- cpuSwitchFrom DCB=%p cpuSwitchTo DCB=%p", prev, next)
 	cpuSwitchTo(unsafe.Pointer(prev), unsafe.Pointer(next), 0)
 }
 

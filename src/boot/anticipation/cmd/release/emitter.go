@@ -235,7 +235,7 @@ func (s *loadableSectionEmitter) read(buffer []uint8) (string, error) {
 // Constant section writer for sending the bootloader params
 //
 type constantParamsEmitter struct {
-	addr              unsafe.Pointer
+	addr              uint64
 	params            *BootloaderParamsDef
 	state             constantWriterState
 	io                ioProto
@@ -243,7 +243,7 @@ type constantParamsEmitter struct {
 	pendingLineLength uint16
 }
 
-func newContstantParamsEmitter(addr unsafe.Pointer, params *BootloaderParamsDef, io ioProto) emitter {
+func newContstantParamsEmitter(addr uint64, params *BootloaderParamsDef, io ioProto) emitter {
 	return &constantParamsEmitter{addr: addr, params: params, io: io, state: cwStart}
 }
 func (c *constantParamsEmitter) line() (string, error) {

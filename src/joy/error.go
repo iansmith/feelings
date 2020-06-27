@@ -14,6 +14,7 @@ const MemoryPageAlreadyInUse = 1
 const MemoryPageNotAvailable = 2
 const MemoryBadPageRequest = 3
 const MemoryAlreadyFree = 4
+const MemoryContiguousNotAvailable = 5
 
 var ErrorMemoryPageAlreadyInUse = errorValue(MemorySubsystem, MemoryPageAlreadyInUse)
 var ErrorMemoryPageNotAvailable = errorValue(MemorySubsystem, MemoryPageNotAvailable)

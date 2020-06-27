@@ -178,13 +178,28 @@ func TestSLAEncoding(t *testing.T) {
 func TestParameterEncoding(t *testing.T) {
 	var v [4]uint64
 	for i := 0; i < 4; i++ {
-		v[i] = (0xff << (i * 8))
+		v[i] = 0xff << (i * 8)
 	}
 	s := EncodeExtensionSetParameters(v)
 	s = strings.ToLower(s)
-	expected := ":4000008000000000000000ff000000000000ff000000000000ff000000000000ff00000061"
+	expected := ":2000008000000000000000ff000000000000ff000000000000ff000000000000ff00000064"
 	if s != expected {
 		t.Errorf("expected %s", expected)
 		t.Errorf(" but got %s", s)
+	}
+}
+
+func TestExampleParameterEncoding(t *testing.T) {
+	ex := EncodeExtensionSetParameters([4]uint64{0xFFFFFC00300010D8, 0, 0, 0})
+	s := ":20000080FFFFFC00300010D80000000000000000000000000000000000000000000000004E"
+	if ex != s {
+		t.Errorf("unable to even get encode correct in decode test!")
+	}
+	_, lt, _, err := DecodeAndCheckStringToBytes(s)
+	if err != nil {
+		t.Errorf("failed to decode parameters properly: %s", err.Error())
+	}
+	if lt != ExtensionSetParameters {
+		t.Errorf("wrong type extracted! expected set params but got %s", lt.String())
 	}
 }
