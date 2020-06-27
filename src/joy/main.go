@@ -2,6 +2,7 @@ package joy
 
 import (
 	"fmt"
+	tgr "runtime"
 	"unsafe"
 
 	"device/arm"
@@ -14,24 +15,18 @@ import (
 //go:external init_exception_vector
 func initExceptionVector()
 
-//go:extern bootloader_params
-var BootloaderParams upbeat.BootloaderParamsDef
-
-var currSP uint64
-
-//go:extern
 var terminalTestPtr FuncPtr
 
+//go:export kernel_main
 func KernelMain() {
+	tgr.ReInit()
 	initExceptionVector()
 
-	// NO ALLOCATIONS! HEAP IS NOT SETUP!
-	// trust.Debugf("bootloader: entry point: %x", BootloaderParams.EntryPoint)
-	// trust.Debugf("bootloader: kernel last: %x", BootloaderParams.KernelLast)
-	// trust.Debugf("bootloader: unix time: %x", BootloaderParams.UnixTime)
-	// trust.Debugf("bootloader: stack pointer: %x", BootloaderParams.StackPointer)
+	trust.Debugf("bootloader: entry point: %x", upbeat.BootloaderParams.EntryPoint)
+	trust.Debugf("bootloader: kernel last: %x", upbeat.BootloaderParams.KernelLast)
+	trust.Debugf("bootloader: unix time: %x", upbeat.BootloaderParams.UnixTime)
+	trust.Debugf("bootloader: stack pointer: %x", upbeat.BootloaderParams.StackPointer)
 
-	//you better init the memory first, because the KernelMain is already running...
 	err := KMemoryInit()
 	if err != JoyNoError {
 		panic(JoyErrorMessage(err))

@@ -168,5 +168,5 @@ func findNewDomainSlot() (int, JoyError) {
 func setHeapPointers(start uint64, end uint64)
 func retFromFork()
 
-func LaunderFunctionPtr0(func()) uint64
-func LaunderFunctionPtr1(func(uintptr)) uint64
+//func LaunderFunctionPtr0(func()) uint64
+//func LaunderFunctionPtr1(func(uintptr)) uint64

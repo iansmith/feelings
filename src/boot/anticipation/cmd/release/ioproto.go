@@ -11,10 +11,12 @@ import (
 	tty "github.com/mattn/go-tty"
 )
 
-///////////////////////////////////////////////////////////////////////
-// protoReceiver deals with what to do with encoded lines
-///////////////////////////////////////////////////////////////////////
-type protoReceiver interface {
+////////////////////////////////////////////////////////////////////////////////
+// ioProto deals with what to do with encoded lines
+// it talks to actual i/o interfaces.  it does not decide what to send/receive,
+// only provides the implementation.
+////////////////////////////////////////////////////////////////////////////////
+type ioProto interface {
 	Data(s string, data []uint8) error             //data is the original data (for cross check)
 	DataInflate(s string, data uint16) error       // data is number of inflated bytes
 	EntryPoint(s string, addr uint32) error        // addr is the lower 32bits of entry point
@@ -29,14 +31,14 @@ type protoReceiver interface {
 }
 
 ///////////////////////////////////////////////////////////////////////
-// ttyReceiver is the model
+// ttyIOProto is the model
 ///////////////////////////////////////////////////////////////////////
 
-type ttyReceiver struct {
+type ttyIOProto struct {
 	io *tty.TTY
 }
 
-func newTTYReceiver(devTTYPath string) *ttyReceiver { //returns null when it can't open
+func newTTYIOProto(devTTYPath string) *ttyIOProto { //returns null when it can't open
 	ttyObj, err := tty.OpenDevice(devTTYPath)
 	if err != nil {
 		log.Fatalf("%v ,,,%T", err, err)
@@ -47,51 +49,51 @@ func newTTYReceiver(devTTYPath string) *ttyReceiver { //returns null when it can
 		log.Printf("%v", err)
 		return nil
 	}
-	return &ttyReceiver{io: ttyObj}
+	return &ttyIOProto{io: ttyObj}
 }
-func (t *ttyReceiver) NewSection(_ *elf.Section) error {
+func (t *ttyIOProto) NewSection(_ *elf.Section) error {
 	return nil //nothing to do for us
 }
 
-func (t *ttyReceiver) EntryPoint(s string, _ uint32) error {
+func (t *ttyIOProto) EntryPoint(s string, _ uint32) error {
 	t.sendString(s)
 	return nil
 }
-func (t *ttyReceiver) BigEntryPoint(s string, _ uint32) error {
+func (t *ttyIOProto) BigEntryPoint(s string, _ uint32) error {
 	t.sendString(s)
 	return nil
 }
-func (t *ttyReceiver) BaseAddrESA(s string, _ uint32) error {
+func (t *ttyIOProto) BaseAddrESA(s string, _ uint32) error {
 	t.sendString(s)
 	return nil
 }
-func (t *ttyReceiver) BaseAddrELA(s string, _ uint32) error {
+func (t *ttyIOProto) BaseAddrELA(s string, _ uint32) error {
 	t.sendString(s)
 	return nil
 }
-func (t *ttyReceiver) BigBaseAddr(s string, _ uint32) error {
+func (t *ttyIOProto) BigBaseAddr(s string, _ uint32) error {
 	t.sendString(s)
 	return nil
 }
-func (t *ttyReceiver) Data(s string, _ []uint8) error {
+func (t *ttyIOProto) Data(s string, _ []uint8) error {
 	t.sendString(s)
 	return nil
 }
-func (t *ttyReceiver) DataInflate(s string, _ uint16) error {
+func (t *ttyIOProto) DataInflate(s string, _ uint16) error {
 	t.sendString(s)
 	return nil
 }
 
-func (t *ttyReceiver) sendString(s string) {
+func (t *ttyIOProto) sendString(s string) {
 	t.io.Output().WriteString(s)
 	t.io.Output().WriteString("\n")
 }
-func (t *ttyReceiver) EOF() (string, error) {
+func (t *ttyIOProto) EOF() (string, error) {
 	t.sendString(EOFLine)
 	return EOFLine, nil
 }
 
-func (t *ttyReceiver) Read(data []uint8) (string, error) {
+func (t *ttyIOProto) Read(data []uint8) (string, error) {
 	count := uint16(0)
 	dropped := 0
 	for {
@@ -121,37 +123,37 @@ func (t *ttyReceiver) Read(data []uint8) (string, error) {
 	}
 }
 
-func (t *ttyReceiver) ExtensionUnixTime(l string, _ uint32) error {
+func (t *ttyIOProto) ExtensionUnixTime(l string, _ uint32) error {
 	t.sendString(l)
 	return nil
 }
 
 ///////////////////////////////////////////////////////////////////////
-// verifyReceiver checks that the loader is putting the code in the
+// verifyIOProto checks that the loader is putting the code in the
 // right place. It also verifies the bytes against the disk version.
 // Used in tests (the -t option)
 ///////////////////////////////////////////////////////////////////////
-type verifyReceiver struct {
+type verifyIOProto struct {
 	section *elf.Section
 	data    []uint8
 	current uint64
 }
 
-func newAddrCheckReceiver() protoReceiver {
-	return &verifyReceiver{} //assumes they will call new sect in a sec
+func newAddrCheckReceiver() ioProto {
+	return &verifyIOProto{} //assumes they will call new sect in a sec
 }
 
-func (v *verifyReceiver) BigEntryPoint(s string, addr uint32) error {
+func (v *verifyIOProto) BigEntryPoint(s string, addr uint32) error {
 	return nil
 }
 
-func (v *verifyReceiver) BigBaseAddr(s string, addr uint32) error {
+func (v *verifyIOProto) BigBaseAddr(s string, addr uint32) error {
 	prev := v.current & 0xffff_ffff
 	v.current = prev | (uint64(addr) << 32)
 	return nil
 }
 
-func (v *verifyReceiver) NewSection(s *elf.Section) error {
+func (v *verifyIOProto) NewSection(s *elf.Section) error {
 	d, err := s.Data()
 	if err != nil {
 		return err
@@ -161,7 +163,7 @@ func (v *verifyReceiver) NewSection(s *elf.Section) error {
 	return nil
 }
 
-func (a *verifyReceiver) Data(s string, xcheck []uint8) error {
+func (a *verifyIOProto) Data(s string, xcheck []uint8) error {
 	decoded, _, addr, err := anticipation.DecodeAndCheckStringToBytes(s)
 	if err != nil {
 		return err
@@ -192,29 +194,29 @@ func (a *verifyReceiver) Data(s string, xcheck []uint8) error {
 	return nil
 }
 
-func (a *verifyReceiver) DataInflate(s string, size uint16) error {
+func (a *verifyIOProto) DataInflate(s string, size uint16) error {
 	return nil
 }
-func (a *verifyReceiver) EntryPoint(s string, size uint32) error {
+func (a *verifyIOProto) EntryPoint(s string, size uint32) error {
 	return nil
 }
-func (v *verifyReceiver) BaseAddrESA(s string, addr uint32) error {
+func (v *verifyIOProto) BaseAddrESA(s string, addr uint32) error {
 	v.current = uint64(addr)
 	return nil
 }
-func (v *verifyReceiver) BaseAddrELA(s string, addr uint32) error {
+func (v *verifyIOProto) BaseAddrELA(s string, addr uint32) error {
 	prev := v.current & 0xffff_ffff_0000_0000
 	v.current = prev | uint64(addr)
 	return nil
 }
-func (v *verifyReceiver) ExtensionUnixTime(s string, size uint32) error {
+func (v *verifyIOProto) ExtensionUnixTime(s string, size uint32) error {
 	return nil
 }
-func (v *verifyReceiver) Read(buffer []byte) (string, error) { //just update to next
+func (v *verifyIOProto) Read(buffer []byte) (string, error) { //just update to next
 	buffer[0] = '.'
 	return string(buffer[0:1]), nil
 
 }
-func (v *verifyReceiver) EOF() (string, error) {
+func (v *verifyIOProto) EOF() (string, error) {
 	return EOFLine, nil
 }

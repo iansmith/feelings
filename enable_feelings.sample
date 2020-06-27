@@ -48,9 +48,4 @@ export LLVM=$TINYGO/llvm-build/
 
 #try not to put much in your path. we try not to use the path, but we might
 #have a ref to it and you dont want "clang" to refer to something unexpected.
-export PATH=$TOOLS/bin:\
-$TINYGO/build:\
-$FEELINGS/bin:\
-$LLVM/bin:\
-$HOSTGO/bin:\
-/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin: # this path is for MacOS running catalina
+export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin: # this path is for MacOS running catalina

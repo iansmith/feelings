@@ -1,16 +1,22 @@
 package main
 
 import (
+	"time"
+
 	"boot/anticipation"
+
 	"debug/elf"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"unsafe"
 )
 
 const uint64signal = uint64(0x1234567887654321)
+const KernelLoadPoint = 0xfffffc0000000000
+const PageSize = 0x10000
 
 type transmitState int
 
@@ -18,6 +24,20 @@ var helpFlag = flag.Bool("h", false, "get usage info")
 var testFlag = flag.Bool("t", false, "encode a file and decode each data line to see if they match")
 var ptyFlag = flag.String("p", "", "supply a pseudo TTY to output to")
 var verbose = flag.Int("v", 0, "verbosity level: 0 terse (default), 1 debug info, 2 show everything ")
+
+// sadly, we had to COPY this here from upbeat.BootLoaderParamsDef because the
+// hostgo will refuse to link due to other things in lib upbeat
+type BootloaderParamsDef struct {
+	EntryPoint   uint64
+	KernelLast   uint64
+	UnixTime     uint64
+	StackPointer uint64
+	HeapStart    uint64
+	HeapEnd      uint64
+}
+
+var bootloaderParamsLocation unsafe.Pointer
+var bootloaderParamsCopy BootloaderParamsDef
 
 ///////////////////////////////////////////////////////////////////////
 // loadableSect is how we match up program headers to sections
@@ -91,7 +111,22 @@ func main() {
 			s := fp.Section(ls.name)
 			if entryPoint >= ls.vaddr && entryPoint < ls.vaddr+s.Size {
 				ls.entrypoint = entryPoint
+				bootloaderParamsCopy.EntryPoint = ls.entrypoint
 			}
+			if ls.vaddr+s.Size > bootloaderParamsCopy.KernelLast {
+				bootloaderParamsCopy.KernelLast = ls.vaddr + s.Size
+			}
+		}
+	}
+
+	symbols, err := fp.Symbols()
+	if err != nil {
+		log.Fatalf("unable to load symbols: %v", err)
+	}
+	for _, sym := range symbols {
+		if sym.Name == "bootloader_params" {
+			bootloaderParamsLocation = unsafe.Pointer(uintptr(sym.Value))
+			break
 		}
 	}
 
@@ -115,7 +150,7 @@ func main() {
 		selfTest(flag.Arg(0), fp, lsect)
 	}
 	if *ptyFlag != "" {
-		oh := newTTYReceiver(*ptyFlag)
+		oh := newTTYIOProto(*ptyFlag)
 		if oh == nil {
 			log.Fatalf("unable to connect to %s", *ptyFlag)
 		}
@@ -181,17 +216,37 @@ func encodeAndDecode(filename string, fp *elf.File, lsect []*loadableSect) {
 	log.Printf("encoding test: everything seems to be ok")
 }
 
-func protocol(filename string, fp *elf.File, lsect []*loadableSect, oh protoReceiver) {
+func protocol(filename string, fp *elf.File, lsect []*loadableSect, oh ioProto) {
 	//
 	//build a list of what we need
 	//
-	emitterList := make([]sectionWriter, len(lsect))
+	emitterList := make([]emitter, len(lsect)+1) //+1 for kernel params emitter
 	for i, l := range lsect {
 		s := fp.Section(l.name)
 		se := newSectionEmitter(s, l, oh)
 		emitterList[i] = se
 	}
-	if len(emitterList) == 0 {
+	//last emmitter does the boot parameter magic
+	emitterList[len(lsect)] = newContstantParamsEmitter(bootloaderParamsLocation, &bootloaderParamsCopy, oh)
+	//we need to set the bootloader params
+	bootloaderParamsCopy.UnixTime = uint64(time.Now().Unix())
+	page := uint64(KernelLoadPoint)
+	//does this page cover the kernel's loaded size
+	for page+(PageSize-1) < bootloaderParamsCopy.KernelLast {
+		page += PageSize
+	}
+	// kernel code takes N pages
+	// kernel stack takes 1 page (N+1)
+	// kernel heap takes 2 pages (N+2,N+3)
+	page += PageSize
+	//this is the "wrong" end of the stack page (if stack reaches here, we are hosed)
+	bootloaderParamsCopy.StackPointer = page
+	page += PageSize
+	bootloaderParamsCopy.HeapStart = page
+	page += PageSize
+	bootloaderParamsCopy.HeapEnd = page + (PageSize - 8) //END of second page
+	log.Printf("kernel boot parameters: %#v and address %p", bootloaderParamsCopy, bootloaderParamsLocation)
+	if len(emitterList) < 2 {
 		log.Fatalf("unable to find any data to release! No sections for transmission!")
 	}
 
@@ -199,13 +254,12 @@ func protocol(filename string, fp *elf.File, lsect []*loadableSect, oh protoRece
 	// Protocol Loop
 	//
 
-	tx := newTransmitter(emitterList, oh)
+	tx := newTransmitLooper(emitterList, oh)
 	if *verbose > 0 {
 		log.Printf("@@@ file %s, sect %s", filename, tx.current.name())
 	}
 	name := tx.current.name()
 	copyOfSect := fp.Section(name)
-
 	tx.current.receiver().NewSection(copyOfSect)
 outer:
 	for {
@@ -220,6 +274,7 @@ outer:
 			log.Printf("ignoring empty line")
 			continue
 		}
+
 		switch l[0] {
 		case '#': //comment
 			log.Print("### ", l[1:])
@@ -228,7 +283,10 @@ outer:
 				log.Print("@@@ ", l[1:])
 			}
 		case '!': //error
-			log.Printf("!!! %s", l[1:])
+			if *verbose < 2 { //verbose user has already seen this, no sense repeating
+				log.Printf("!!! %s", l[1:])
+			}
+			log.Printf("RETRY offset addr 0x%08x in %s\n", tx.current.currentAddr(), tx.current.name())
 			tx.errorCount++
 			switch {
 			case tx.errorCount > 5:
@@ -237,7 +295,7 @@ outer:
 				tx.current.reset()
 				b := tx.current.next()
 				if !b {
-					log.Fatalf("bad state, should never reset an empty sectionWriter!")
+					log.Fatalf("bad state, should never reset an empty emitter!")
 				}
 			}
 		case '.':
@@ -263,7 +321,7 @@ outer:
 			log.Printf("ignoring unexpected response: %s", l)
 		}
 	}
-	if _, ok := oh.(*verifyReceiver); ok {
+	if _, ok := oh.(*verifyIOProto); ok {
 		log.Printf("verified all the data bytes and the address of loading them.")
 		os.Exit(0)
 	}
@@ -309,7 +367,7 @@ func usage() {
 	os.Exit(1)
 }
 
-func sendLineToDevice(tx *transmitter) {
+func sendLineToDevice(tx *transmitLooper) {
 	// we get the line as a courtesy, but it's already been sent
 	l, err := tx.line()
 	if err != nil {

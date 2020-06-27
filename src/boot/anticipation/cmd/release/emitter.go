@@ -5,43 +5,61 @@ import (
 	"debug/elf"
 	"io"
 	"log"
+	"unsafe"
 )
 
 const resetIncrement = 0xff00 //a little less than 64K
 
-type sectionWriter interface {
+///////////////////////////////////////////////////////////////////////////////
+// emitter can take a blob of data and emit the necessary commands to transmit
+// that memory to the other side. It uses a ioProto to do the actual IO work
+// but it computes the lines and addresses to send.
+///////////////////////////////////////////////////////////////////////////////
+type emitter interface {
 	line() (string, error)
 	next() bool //true if no more lines
 	reset()     //return to beginning of sect
 	name() string
 	read([]uint8) (string, error)
-	receiver() protoReceiver
+	receiver() ioProto
+	currentAddr() uint32
 }
 
-type loadableSectionWriter struct {
+// loadableSectionEmitter works from the blob of data in a loadable section of
+// an elf format binary
+type loadableSectionEmitter struct {
 	sect              *elf.Section
 	loadable          *loadableSect
-	state             sectionWriterState
+	state             emitterState
 	current           uint32
 	resetPoint        uint32
-	oh                protoReceiver
+	oh                ioProto
 	buffer            []uint8
 	seeker            io.ReadSeeker
 	pendingLineLength uint16
 }
 
-type sectionWriterState int
+type emitterState int
 
 const (
-	swStart         sectionWriterState = 0
-	swEntryPoint    sectionWriterState = 1
-	swAddr          sectionWriterState = 2
-	swData          sectionWriterState = 3
-	swBigEntryPoint sectionWriterState = 4
-	swBigAddr       sectionWriterState = 5
+	swStart         emitterState = 0
+	swEntryPoint    emitterState = 1
+	swAddr          emitterState = 2
+	swData          emitterState = 3
+	swBigEntryPoint emitterState = 4
+	swBigAddr       emitterState = 5
 )
 
-func newSectionEmitter(s *elf.Section, l *loadableSect, oh protoReceiver) *loadableSectionWriter {
+type constantWriterState int
+
+const (
+	cwStart   constantWriterState = 0
+	cwBigAddr constantWriterState = 1
+	cwAddr    constantWriterState = 2
+	cwData    constantWriterState = 3
+)
+
+func newSectionEmitter(s *elf.Section, l *loadableSect, oh ioProto) emitter {
 	if s.Size > 0xffff {
 		log.Fatalf("unable to encode inflating sect (.bss) because size is greater than 0xffff (16 bits): %x", s.Size)
 	}
@@ -56,7 +74,7 @@ func newSectionEmitter(s *elf.Section, l *loadableSect, oh protoReceiver) *loada
 	} else {
 		l.addressType = anticipation.ExtensionBigEntryPoint
 	}
-	return &loadableSectionWriter{sect: s,
+	return &loadableSectionEmitter{sect: s,
 		loadable:   l,
 		state:      swStart,
 		oh:         oh,
@@ -67,18 +85,21 @@ func newSectionEmitter(s *elf.Section, l *loadableSect, oh protoReceiver) *loada
 	}
 }
 
-func (s *loadableSectionWriter) receiver() protoReceiver {
+func (s *loadableSectionEmitter) receiver() ioProto {
 	return s.oh
 }
 
-func (s *loadableSectionWriter) name() string {
+func (s *loadableSectionEmitter) name() string {
 	return s.sect.Name
 }
-func (s *loadableSectionWriter) section() *elf.Section {
+func (s *loadableSectionEmitter) section() *elf.Section {
 	return s.sect
 }
+func (s *loadableSectionEmitter) currentAddr() uint32 {
+	return s.current
+}
 
-func (s *loadableSectionWriter) next() bool {
+func (s *loadableSectionEmitter) next() bool {
 	switch s.state {
 	case swStart:
 		if s.loadable.entrypoint != uint64signal {
@@ -116,11 +137,11 @@ func (s *loadableSectionWriter) next() bool {
 		}
 		return true
 	}
-	panic("unexpected sectionWriter state")
+	panic("unexpected emitter state")
 }
 
 //string return value here is of limited value, it's already been transmitted
-func (s *loadableSectionWriter) line() (string, error) {
+func (s *loadableSectionEmitter) line() (string, error) {
 	switch s.state {
 	case swStart:
 		panic("should never request a line in start state")
@@ -198,14 +219,108 @@ func (s *loadableSectionWriter) line() (string, error) {
 		}
 		return result, nil
 	}
-	panic("unexpected sectionWriter state!")
+	panic("unexpected emitter state!")
 }
 
 // normally, you want to call next() immediately after this
-func (s *loadableSectionWriter) reset() {
+func (s *loadableSectionEmitter) reset() {
 	s.state = swStart
 }
 
-func (s *loadableSectionWriter) read(buffer []uint8) (string, error) {
+func (s *loadableSectionEmitter) read(buffer []uint8) (string, error) {
 	return s.oh.Read(buffer)
+}
+
+//
+// Constant section writer for sending the bootloader params
+//
+type constantParamsEmitter struct {
+	addr              unsafe.Pointer
+	params            *BootloaderParamsDef
+	state             constantWriterState
+	io                ioProto
+	done              bool
+	pendingLineLength uint16
+}
+
+func newContstantParamsEmitter(addr unsafe.Pointer, params *BootloaderParamsDef, io ioProto) emitter {
+	return &constantParamsEmitter{addr: addr, params: params, io: io, state: cwStart}
+}
+func (c *constantParamsEmitter) line() (string, error) {
+	switch c.state {
+	case cwStart:
+		panic("should never request a line in start state")
+	case cwBigAddr:
+		top := uint32(uintptr(c.addr) >> 32)
+		result := anticipation.EncodeBigAddr(top)
+		c.pendingLineLength = uint16(len(result))
+		err := c.io.BigBaseAddr(result, top)
+		if err != nil {
+			return "", err
+		}
+		return result, nil
+	case cwAddr:
+		bottom := uint32(uintptr(c.addr) & 0xffffffff)
+		result := anticipation.EncodeELA(uint16(bottom >> 16))
+		c.pendingLineLength = uint16(len(result))
+		err := c.io.BaseAddrELA(result, bottom)
+		if err != nil {
+			return "", err
+		}
+		return result, nil
+
+	case cwData:
+		//6 uint64s
+		currentLowest16ForProtocol := uint16(uintptr(c.addr) & 0xffff)
+		payloadSize := uint32(unsafe.Sizeof(BootloaderParamsDef{}))
+		rawData := make([]byte, payloadSize)
+		for i := 0; i < int(payloadSize); i++ {
+			ptr := (*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&bootloaderParamsCopy)) + uintptr(i)))
+			rawData[i] = *ptr
+		}
+		result := anticipation.EncodeDataBytes(rawData, currentLowest16ForProtocol)
+		err := c.io.Data(result, rawData)
+		if err != nil {
+			return "", err
+		}
+		return result, nil
+	}
+	panic("unexpected emitter state!")
+
+}
+func (c *constantParamsEmitter) next() bool {
+	switch c.state {
+	case cwStart:
+		c.state = cwBigAddr
+		return true
+	case cwBigAddr:
+		c.state = cwAddr
+		return true
+	case cwAddr:
+		c.state = cwData
+		return true
+	case cwData:
+		//only one line
+		if c.done {
+			return true
+		}
+		c.done = true
+		return false
+	}
+	panic("bad state of constantParamsEmitter")
+}
+func (c *constantParamsEmitter) reset() {
+	c.done = false
+}
+func (c *constantParamsEmitter) name() string {
+	return "bootloader parameters"
+}
+func (c *constantParamsEmitter) read(buffer []uint8) (string, error) {
+	return c.io.Read(buffer)
+}
+func (c *constantParamsEmitter) receiver() ioProto {
+	return c.io
+}
+func (c *constantParamsEmitter) currentAddr() uint32 {
+	return uint32(uintptr(c.addr) & 0xffffffff)
 }

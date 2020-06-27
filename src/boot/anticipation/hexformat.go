@@ -2,6 +2,7 @@ package anticipation
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 )
@@ -123,6 +124,8 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 		elaAddr := uint32(converted[4])*256 + uint32(converted[5])
 		elaAddr = elaAddr << 16 //data supplied is high order 16 of 32
 		bb.SetBaseAddr(elaAddr) //but this sets the lower order 32 of 64
+		fmt.Printf("ExtendedLinearAddress %08x [%16x]\n", elaAddr, bb.BaseAddress())
+
 		return false, false
 	case ExtensionUnixTime: //32 bit int from epoch
 		length := converted[0]
@@ -141,6 +144,7 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 		}
 		t := uint32(converted[4])*0x1000000 + uint32(converted[5])*0x10000 + uint32(converted[6])*0x100 + uint32(converted[7])
 		bb.SetBigBaseAddr(t)
+		fmt.Printf("ExtensionBigLinearAddress %08x [%16x]\n", t, bb.BaseAddress())
 		return false, false
 	case ExtensionBigEntryPoint: //32 bit int which is the HIGH order of 64bit pointer
 		length := converted[0]
@@ -150,6 +154,7 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 		}
 		t := uint32(converted[4])*0x1000000 + uint32(converted[5])*0x10000 + uint32(converted[6])*0x100 + uint32(converted[7])
 		bb.SetBigEntryPoint(t)
+		fmt.Printf("ExtensionBigEntryPoint %08x [%16x]\n", t, bb.EntryPoint())
 		return false, false
 	case StartLinearAddress: //32 bit addr
 		length := converted[0]
@@ -159,6 +164,7 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 		}
 		slaAddr := uint32(converted[4])*0x1000000 + uint32(converted[5])*0x10000 + uint32(converted[6])*0x100 + uint32(converted[7])
 		bb.SetEntryPoint(slaAddr)
+		fmt.Printf("StartLinearAddress %08x [%16x]\n", slaAddr, bb.EntryPoint())
 		return false, false
 	}
 
@@ -170,6 +176,9 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 func DecodeAndCheckStringToBytes(s string) ([]byte, HexLineType, uint32, error) {
 	lenAs16 := uint16(len(s))
 	converted := ConvertBuffer(lenAs16, []byte(s))
+	if converted == nil {
+		return nil, HexLineType(0), 0, errors.New("convert buffer failed")
+	}
 	var addr uint32
 	lt, ok := ExtractLineType(converted)
 	if !ok {

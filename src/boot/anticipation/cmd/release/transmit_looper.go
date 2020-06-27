@@ -8,7 +8,7 @@ import (
 )
 
 ///////////////////////////////////////////////////////////////////////
-// transmitter
+// transmitLooper
 ///////////////////////////////////////////////////////////////////////
 const (
 	tsData transmitState = 0
@@ -16,20 +16,36 @@ const (
 	tsEnd  transmitState = 2
 )
 
-type transmitter struct {
+// transmitLooper knows how to speak the line oriented protocol with the device
+// and handle successful lines and failed lines, doing retransmits when lines
+// fail.  the transmit looper uses a sequence of emmiters to do the work of
+// figuring out WHAT line to send, the transmit looper is only concerned with
+// the responses from the device.
+//
+// So the layers are: transmitLooper <---  emitter  <--- ioProto
+// ioProto does the work of actually sending things through an io interface
+//     and receiving things from it.  It only knows the handful of commands that
+//     are the ones defined in Intel Hex format.
+// emitter figures out what lines (the actual binary content) and addresses to send
+//     emitter knows things about the intel hex encoding like where the address
+//     part of a data line is, putting on checksums, etc
+// transmitLooper works with each line and handles the actual line oriented protocol
+//     at the top level.  it is primarily concerned with confirming each line was
+//     received ok and if it wasn't, sending it again.
+//
+type transmitLooper struct {
 	state        transmitState
 	emitterIndex int
-	current      sectionWriter
-	emitters     []sectionWriter
+	current      emitter
+	emitters     []emitter
 	inBuffer     []uint8
-	in           protoReceiver
+	in           ioProto
 	errorCount   int //in a row
 	successCount int //overall
 }
 
-func newTransmitter(all []sectionWriter, oh protoReceiver) *transmitter {
-
-	return &transmitter{
+func newTransmitLooper(all []emitter, oh ioProto) *transmitLooper {
+	return &transmitLooper{
 		in:           oh,
 		state:        tsData,
 		emitterIndex: 1,
@@ -42,9 +58,9 @@ func newTransmitter(all []sectionWriter, oh protoReceiver) *transmitter {
 //this returns false when we transition the tsEnd state, even though that
 //is a valid state... allows differentiation between next() to next emitter
 //and next() to end state.
-func (t *transmitter) next() bool {
+func (t *transmitLooper) next() bool {
 	if t.state == tsEnd { // are we done done?
-		log.Fatalf("bad state, transmitter should know its done!")
+		log.Fatalf("bad state, transmitLooper should know its done!")
 	}
 	if t.state == tsTime {
 		t.state = tsEnd
@@ -60,7 +76,7 @@ func (t *transmitter) next() bool {
 	return true
 }
 
-func (t *transmitter) read() (string, error) {
+func (t *transmitLooper) read() (string, error) {
 	l, err := t.current.read(t.inBuffer)
 	if err != nil {
 		return "", err
@@ -70,7 +86,7 @@ func (t *transmitter) read() (string, error) {
 
 const EOFLine = ":00000001FF"
 
-func (t *transmitter) line() (string, error) {
+func (t *transmitLooper) line() (string, error) {
 	switch t.state {
 	case tsEnd:
 		_, err := t.in.EOF()
@@ -85,5 +101,5 @@ func (t *transmitter) line() (string, error) {
 		l := anticipation.EncodeExtensionUnixTime(now)
 		return l, t.in.ExtensionUnixTime(l, now)
 	}
-	panic("unexpected state for transmitter")
+	panic("unexpected state for transmitLooper")
 }

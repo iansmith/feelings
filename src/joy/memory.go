@@ -1,10 +1,11 @@
 package joy
 
 import (
-	"runtime"
-	"unsafe"
-
 	"lib/trust"
+	"lib/upbeat"
+
+	tinygo_rt "runtime"
+	"unsafe"
 )
 
 const KPageSize = uint64(0x10000)            //64KB
@@ -28,12 +29,24 @@ var KMemInUse [KInUseSize]uint64
 func KMemoryInit() JoyError {
 	//trust.Infof("kmemoryinit: %x", KRamStart)
 	//our code page
-	if _, err := KMemorySetInUse(0); err != JoyNoError {
+	pg := 0
+	pagePtr, err := KMemorySetInUse(pg)
+	if err != JoyNoError {
 		return err
 	}
-	//stack was set up by the bootloader, but we want our data structs
+	ptr := uintptr(pagePtr)
+	for ptr+uintptr(KPageSize) < uintptr(upbeat.BootloaderParams.KernelLast) {
+		pg++
+		pagePtr, err = KMemorySetInUse(pg)
+		if err != JoyNoError {
+			return err
+		}
+		ptr = uintptr(pagePtr)
+	}
+	//stack and heap was set up by the bootloader, but we want our data structs
 	//to reflect this properly
-	stack, err := KMemorySetInUse(1)
+	pg++
+	stack, err := KMemorySetInUse(pg)
 	if err != JoyNoError {
 		return err
 	}
@@ -45,19 +58,29 @@ func KMemoryInit() JoyError {
 	bottom.Stack = uint64(uintptr(top))
 
 	//we need setup heap
-	start := (*uint64)((unsafe.Pointer)(&heap_start))
-	end := (*uint64)((unsafe.Pointer)(&heap_end))
+	start := (*uint64)((unsafe.Pointer)(&heap_start)) //done by start
+	end := (*uint64)((unsafe.Pointer)(&heap_end))     //done by start
 
-	ptr, err := KMemorySetInUse(2)
+	pg++
+	pagePtr, err = KMemorySetInUse(pg)
 	if err != JoyNoError {
 		return err
 	}
-	*start = uint64(uintptr(ptr))
-	*end = uint64(uintptr(ptr) + uintptr(KPageSize) - 16)
+	ptr = uintptr(pagePtr)
+	for ptr+uintptr(KPageSize) < uintptr(*end) {
+		pg++
+		pagePtr, err = KMemorySetInUse(pg)
+		if err != JoyNoError {
+			return err
+		}
+		ptr = uintptr(pagePtr)
+	}
+
+	//kernel process init
 	bottom.HeapStart = unsafe.Pointer(uintptr(*start))
 	bottom.HeapEnd = unsafe.Pointer(uintptr(*end))
 	CurrentDomain = (*DomainControlBlock)(bottom)
-	runtime.LogAlloc = true
+	tinygo_rt.LogAlloc = true
 	trust.Infof("kmemoryinit kernel heap: heap_start=0x%x "+
 		"heap_end is 0x%x", *start, *end)
 

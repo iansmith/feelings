@@ -26,12 +26,12 @@ clean:
 	rm release *.o >/dev/null 2>/dev/null || true
 
 ##
-## NOTE: This /dev/ttys004 depends on your system state when you run
+## NOTE: This /dev/ttys00X depends on your system state when you run
 ## NOTE: antc in another window. Look at the first line of output from
 ## NOTE: antc to see what to change this to
 ##
 deploy: release
-	./release -v 1 -p /dev/ttys005 ../../../../joy/cmd/joy/joy
+	./release -v 1 -p /dev/ttys006 ../../../../joy/cmd/joy/joy
 
 
 

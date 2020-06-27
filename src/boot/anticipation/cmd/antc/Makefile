@@ -52,17 +52,18 @@ kernel8.img.hardware: $(NAME).hardware
 	$(TINYGO_OBJCOPY) -O binary $(NAME).hardware kernel8.img.hardware
 
 run:
-	qemu-system-aarch64 -M raspi3 -kernel $(NAME) -serial null -serial chardev:char0 \
- 		-d in_asm,unimp,cpu_reset,guest_errors -semihosting -semihosting-config enable=on,target=native \
+	$(TOOLS)/bin/qemu-system-aarch64 -M raspi3 -kernel $(NAME) \
+		-serial null -serial chardev:char0 \
+ 		-d unimp,cpu_reset,guest_errors \
+ 		-semihosting -semihosting-config enable=on,target=native \
  		--chardev pty,path=/dev/ttys009,mux=on,id=char0
 
 # 		 -serial mon:stdio \
 
 debug:
-	qemu-system-aarch64 \
-		-M raspi3 -S -s \
+	$(TOOLS)/bin/qemu-system-aarch64 -M raspi3 -S -s \
 		-kernel $(NAME) \
 		-semihosting -semihosting-config enable=on,target=native \
-		-serial null -serial stdio \
+		-serial null -serial chardev:char0 \
 		-d unimp,cpu_reset,guest_errors \
 		--chardev pty,path=/dev/ttys009,mux=on,id=char0

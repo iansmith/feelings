@@ -98,8 +98,8 @@ func main() {
 	//Tell Core0 which interrupts to consume
 	machine.QA7.TimerInterruptControl[0].SetPhysicalNonSecureTimerIRQ()
 	machine.QA7.IRQSource[0].SetGPU()
-
 	upbeat.UnmaskDAIF()
+
 	for {
 		upbeat.MaskDAIF()
 		if started {
@@ -110,19 +110,21 @@ func main() {
 		wait()
 		upbeat.MaskDAIF()
 	}
+	machine.QA7.LocalTimerControl.ClearTimerEnable()
 
 	//nothing to do but wait for interrupts, we use lr.next() to block
 	//until we get a line, and lr.next implies interrupts are off
 	for {
 		s := lr.next(buffer)
+
 		if len(s) == 0 {
 			continue
 		}
 		done, err := processLine(s)
 		if err != nil {
-			machine.MiniUART.WriteString("! processing error:" + err.Error() + "\n")
+			machine.MiniUART.WriteString("! processing error:" + err.Error() + " " + s[0:16] + "\n")
 		} else {
-			machine.MiniUART.WriteString(".\n")
+			machine.MiniUART.WriteString(". " + s[0:16] + "\n")
 		}
 		if done {
 			break
@@ -187,7 +189,7 @@ func interruptReceive() {
 			atLeastOne = true
 			if started {
 				logger.Debugf("___________WATCHDOG! __________\n")
-				machine.MiniUART.WriteString(". watchdog timeout during transfer\n")
+				//machine.MiniUART.WriteString(". watchdog timeout during transfer\n")
 			} else {
 				logger.Debugf("anticipation: local timer interrupt: #%03d", waitCount)
 				machine.MiniUART.WriteString(fmt.Sprintf(". local timer interrupt: #%03d\n", waitCount))
@@ -209,7 +211,6 @@ func processLine(line string) (bool, error) {
 	if end > 0 && line[end-1] == 10 {
 		end--
 	}
-
 	// just do what the line says
 	converted, lt, _, err := anticipation.DecodeAndCheckStringToBytes(line[:end])
 	if err != nil {
@@ -228,33 +229,17 @@ func processLine(line string) (bool, error) {
 		machine.MiniUART.WriteString(".\n") //signal the sender everything is ok
 		logger.Infof(" === jumping to kernel at address %x ===\n", metal.EntryPoint())
 		upbeat.MaskDAIF() //turn off interrupts while we boot up the kernel
-		ut := metal.UnixTime()
-		ep := metal.EntryPoint()
-		page := uint64(0x10000) //64K pages
-		lastAddr := metal.BaseAddress() + (page - 8)
-		logger.Debugf("last address we saw was 0x%x", lastAddr)
 		//turn off the interrupts so we don't get them in kernel until we are ready
 		machine.IC.Disable1.SetAux() //sadly, you *set* things in the DISable reg to turn off
 		machine.QA7.LocalTimerControl.ClearTimerEnable()
-		// this is the page AFTER the kernel load address but stack grows down so
-		// we choose the highest address
-		kernelSP := uint64(0xfffffc0030010000) + (page - 16)
-
-		jumpToKernel(ep, lastAddr, uint64(ut), kernelSP)
+		jumpToKernel(metal.EntryPoint(), 0xfffffc00_3001_fff0, 0xfffffc00_3000_10d8)
 	}
 	//keep going
 	return false, nil
 }
 
 //export jump_to_kernel
-func jumpToKernel(ep uint64, last uint64, ut uint64, sp uint64)
-
-// {
-// 	arm.AsmFull("mov x19,{ut}", map[string]interface{}{"ut": ut})
-// 	arm.AsmFull("mov x20,{ep}", map[string]interface{}{"ep": ep})
-// 	arm.AsmFull("mov sp,{sp}", map[string]interface{}{"sp": sp})
-// 	arm.AsmFull("br {ep}", map[string]interface{}{"ep": ep})
-// }
+func jumpToKernel(ep uint64, sp uint64, blockPtr uint64)
 
 func setupVM() {
 	//setup memory types and attributes

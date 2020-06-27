@@ -132,13 +132,13 @@ joy.setHeapPointers:
 	str x1,[x3]
 	ret
 
-.global joy.LaunderFunctionPtr0
-joy.LaunderFunctionPtr0:  //reg 0 is the parameter, just return it
-	ret
+//.global joy.LaunderFunctionPtr0
+//joy.LaunderFunctionPtr0:  //reg 0 is the parameter, just return it
+//	ret
 
-.global joy.LaunderFunctionPtr1
-joy.LaunderFunctionPtr1:  //reg 0 is the parameter, just return it
-	ret
+//.global joy.LaunderFunctionPtr1
+//joy.LaunderFunctionPtr1:  //reg 0 is the parameter, just return it
+//	ret
 
 .extern PermitPreemption
 schedule_tail:
@@ -151,6 +151,35 @@ joy.retFromFork:
     mov    x0, x20
     blr    x19
 
+// where the bootloader params end up
 .global bootloader_params
 bootloader_params:
-.space 256
+	.space 256
+
+//
+// kernel entry point
+// we need a stack to do anything meaningful, so we get the stack as a param to start.
+// all the other params go in bootloader_params and x1 is a ptr to that.
+//
+.global start
+start:
+	mov sp,x0
+
+	//heap params
+
+	//ldr x6, =_heap_start
+
+	adrp x6, _heap_start
+	add x6,x6,#:lo12:_heap_start
+	//ldr x6,_heap_start
+	ldr x5,[x1,#32]
+	str x5,[x6]
+
+	// ldr x6,=_heap_end
+
+	//ldr x6,_heap_end
+	adrp x6, _heap_end
+	add x6,x6,#:lo12:_heap_end
+	ldr x5,[x1,#40]
+	str x5,[x6]
+	b kernel_main
