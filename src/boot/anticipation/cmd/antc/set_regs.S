@@ -34,7 +34,6 @@ _enable_mmu_tables:
 jump_to_kernel:
 	//need to jump to kernel, it's entry was passed as first
 	mov x19,x0
-	mov x0,x1   // the receiver wants the stack pointer so it branch to kernelMain normally
-	mov x1,x2   // block of bootloader params
+	mov x0,x1   // pass a pointer to the boot parms
 	br x19
 

@@ -163,23 +163,23 @@ bootloader_params:
 //
 .global start
 start:
-	mov sp,x0
-
-	//heap params
-
-	//ldr x6, =_heap_start
-
-	adrp x6, _heap_start
-	add x6,x6,#:lo12:_heap_start
-	//ldr x6,_heap_start
-	ldr x5,[x1,#32]
+	//stack pointer is in the structure, but put into sp and store in _stack_top
+	ldr x5,[x0,#24]
+	str sp, x5
+	adrp x6, _stack_top
+	add x6,x6,#:lo12:_stack_top
 	str x5,[x6]
 
-	// ldr x6,=_heap_end
 
-	//ldr x6,_heap_end
+	// heap start is in the struction
+	adrp x6, _heap_start
+	add x6,x6,#:lo12:_heap_start
+	ldr x5,[x0,#32]
+	str x5,[x6]
+
+	//heap end is in the structure
 	adrp x6, _heap_end
 	add x6,x6,#:lo12:_heap_end
-	ldr x5,[x1,#40]
+	ldr x5,[x0,#40]
 	str x5,[x6]
 	b kernel_main

@@ -33,6 +33,23 @@ func nanosecondsToTicks(t int64) timeUnit {
 	return timeUnit(t / (1000))
 }
 
+// this is needed because at boot time of the kernel we futz with
+// the heapStart, heapEnd, and stackTop values.
+// Cannot be inlined because of the optimizer.  It doesn't know we are
+// doing and we can't mark heapStart volatile without changing the runtime.
+
+//go:noinline
+func ReInit() {
+        tmp:=((*uint64)(unsafe.Pointer(&heapStartSymbol)))
+        heapStart = uintptr(*tmp)
+        tmp=((*uint64)(unsafe.Pointer(&heapEndSymbol)))
+        heapEnd = uintptr(*tmp)
+        tmp:=((*uint64)(unsafe.Pointer(&stackTopSymbol)))
+        stackTop = uintptr(*tmp)
+
+        heapptr = heapStart
+
+}
 
 //go:export main
 func main() {

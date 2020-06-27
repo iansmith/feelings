@@ -12,20 +12,15 @@ func TestGoodLines(t *testing.T) {
 	checkPerfectLine(t, ":10010000214601360121470136007EFE09D2190140", DataLine)
 	checkPerfectLine(t, ":00000001FF", EndOfFile)
 	checkPerfectLine(t, ":04000005000000CD2A", StartLinearAddress)
-	checkPerfectLine(t, ":040000805E964DD368", ExtensionUnixTime)
+	checkPerfectLine(t, ":200000800001020304050607101112131415161720212223242526273031323334353637F0", ExtensionSetParameters)
 }
 
 func TestEndToEnd(t *testing.T) {
 	values := []byte{97, 100, 100, 114, 101, 115, 115, 32, 103, 97, 112}
 	bb := newFakeByteBuster(values, 0x10)
 
-	ut := ":040000805E964DD368"
-	checkAllAndProcess(t, ut, ExtensionUnixTime, bb, 0, false)
-	if bb.UnixTime() != 0x5E964DD3 {
-		t.Errorf("unix time was not set, expected 5E964DD3 but got %x", bb.UnixTime())
-	}
 	if bb.EntryPointIsSet() {
-		t.Errorf("entry point should not be changed after a change to the time")
+		t.Errorf("entry point should not be changed at start")
 	}
 
 	esa := ":020000021200EA"
@@ -178,5 +173,18 @@ func TestSLAEncoding(t *testing.T) {
 	expected := ":04000005000000cd2a"
 	if s != expected {
 		t.Errorf("expected %s but got %s", expected, s)
+	}
+}
+func TestParameterEncoding(t *testing.T) {
+	var v [4]uint64
+	for i := 0; i < 4; i++ {
+		v[i] = (0xff << (i * 8))
+	}
+	s := EncodeExtensionSetParameters(v)
+	s = strings.ToLower(s)
+	expected := ":4000008000000000000000ff000000000000ff000000000000ff000000000000ff00000061"
+	if s != expected {
+		t.Errorf("expected %s", expected)
+		t.Errorf(" but got %s", s)
 	}
 }

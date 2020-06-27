@@ -232,14 +232,15 @@ func processLine(line string) (bool, error) {
 		//turn off the interrupts so we don't get them in kernel until we are ready
 		machine.IC.Disable1.SetAux() //sadly, you *set* things in the DISable reg to turn off
 		machine.QA7.LocalTimerControl.ClearTimerEnable()
-		jumpToKernel(metal.EntryPoint(), 0xfffffc00_3001_fff0, 0xfffffc00_3000_10d8)
+		jumpToKernel(metal.EntryPoint(), metal.GetParameter(0), metal.GetParameter(1),
+			metal.GetParameter(2), metal.GetParameter(3))
 	}
 	//keep going
 	return false, nil
 }
 
 //export jump_to_kernel
-func jumpToKernel(ep uint64, sp uint64, blockPtr uint64)
+func jumpToKernel(ep uint64, blockPtr uint64, _ uint64, _ uint64, _ uint64)
 
 func setupVM() {
 	//setup memory types and attributes

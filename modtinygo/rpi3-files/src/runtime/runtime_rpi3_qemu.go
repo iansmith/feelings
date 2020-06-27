@@ -11,6 +11,24 @@ import (
 var asyncScheduler = false
 type timeUnit int64
 
+// this is needed because at boot time of the kernel we futz with
+// the heapStart, heapEnd, and stackTop values.
+// Cannot be inlined because of the optimizer.  It doesn't know we are
+// doing and we can't mark heapStart volatile without changing the runtime.
+
+//go:noinline 
+func ReInit() {
+	tmp:=((*uint64)(unsafe.Pointer(&heapStartSymbol)))
+	heapStart = uintptr(*tmp)
+	tmp=((*uint64)(unsafe.Pointer(&heapEndSymbol)))
+	heapEnd = uintptr(*tmp)
+	tmp:=((*uint64)(unsafe.Pointer(&stackTopSymbol)))
+	stackTop = uintptr(*tmp)
+
+	heapptr = heapStart
+	
+}
+
 //go:export sleepticks sleepticks
 func sleepTicks(n timeUnit) {
 	start := Semihostingv2Call(uint64(Semihostingv2OpClock), 0)

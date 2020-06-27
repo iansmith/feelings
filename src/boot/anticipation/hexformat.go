@@ -33,7 +33,7 @@ const (
 	ExtendedSegmentAddress    HexLineType = 2
 	ExtendedLinearAddress     HexLineType = 4
 	StartLinearAddress        HexLineType = 5
-	ExtensionUnixTime         HexLineType = 0x80
+	ExtensionSetParameters    HexLineType = 0x80
 	ExtensionBigLinearAddress HexLineType = 0x81
 	ExtensionBigEntryPoint    HexLineType = 0x82
 )
@@ -50,8 +50,8 @@ func (hlt HexLineType) String() string {
 		return "ExtendedLinearAddress"
 	case StartLinearAddress:
 		return "StartLinearAddress"
-	case ExtensionUnixTime:
-		return "ExtensionUnixTime"
+	case ExtensionSetParameters:
+		return "ExtensionSetParametersTime"
 	case ExtensionBigLinearAddress:
 		return "ExtensionBigLinear"
 	case ExtensionBigEntryPoint:
@@ -73,7 +73,7 @@ func hexLineTypeFromInt(i int) HexLineType {
 	case 5:
 		return StartLinearAddress
 	case 0x80:
-		return ExtensionUnixTime
+		return ExtensionSetParameters
 	case 0x81:
 		return ExtensionBigLinearAddress
 	case 0x82:
@@ -127,14 +127,23 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 		fmt.Printf("ExtendedLinearAddress %08x [%16x]\n", elaAddr, bb.BaseAddress())
 
 		return false, false
-	case ExtensionUnixTime: //32 bit int from epoch
+	case ExtensionSetParameters: //4 64 bit integers
 		length := converted[0]
-		if length != 4 {
-			print("!extension time value has too many bytes:", length, "\n")
+		if length != 32 {
+			print("!extension parameters must be exactly 32 bytes, but was :", length, "\n")
 			return true, false
 		}
-		t := uint32(converted[4])*0x1000000 + uint32(converted[5])*0x10000 + uint32(converted[6])*0x100 + uint32(converted[7])
-		bb.SetUnixTime(t)
+		for i := 0; i < 4; i++ {
+			value := uint64(0)
+			for p := 7; p >= 0; p-- {
+				placeValue := uint64(1 << (8 * p))
+				//4 is because of four constant valuesat left of converted[]
+				//i*8 is which param
+				//7-p is byte
+				value += (placeValue * uint64(converted[(4)+(i*8)+(7-i)]))
+			}
+			bb.SetParameter(i, value)
+		}
 		return false, false
 	case ExtensionBigLinearAddress: //32 bit int which is the HIGH order of 64bit addr
 		length := converted[0]
@@ -242,7 +251,7 @@ func ExtractLineType(converted []byte) (HexLineType, bool) {
 	case 5:
 		return StartLinearAddress, true
 	case 0x80:
-		return ExtensionUnixTime, true
+		return ExtensionSetParameters, true
 	case 0x81:
 		return ExtensionBigLinearAddress, true
 	case 0x82:
@@ -423,12 +432,20 @@ func EncodeESA(base uint16) string {
 	return buf.String()
 }
 
-// this takes a 32bit int for unix time from epoch (1970)
-func EncodeExtensionUnixTime(t uint32) string {
+// this takes 4 64 bit integers
+func EncodeExtensionSetParameters(v [4]uint64) string {
 	buf := bytes.Buffer{}
-	buf.WriteString(fmt.Sprintf(":040000%02X%04X", int(ExtensionUnixTime), t))
-	raw := []byte{byte(t & 0xff000000 >> 24), byte(t & 0x00ff0000 >> 16), byte(t & 0x0000ff00 >> 8), byte(t & 0x000000ff)}
-	cs := createChecksum(raw, 0, ExtensionUnixTime)
+	valueBuffer := bytes.Buffer{} //for checksum ease
+	buf.WriteString(fmt.Sprintf(":400000%02X", int(ExtensionSetParameters)))
+	for i := 0; i < 4; i++ {
+		value := v[i]
+		for p := 7; p >= 0; p-- {
+			b := byte(value & (0xff >> (p * 8)))
+			valueBuffer.WriteByte(b)
+		}
+		buf.WriteString(fmt.Sprintf("%016X", value))
+	}
+	cs := createChecksum(valueBuffer.Bytes(), 0, ExtensionSetParameters)
 	buf.WriteString(fmt.Sprintf("%02X", cs))
 	return buf.String()
 }

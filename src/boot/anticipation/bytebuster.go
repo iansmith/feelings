@@ -13,14 +13,13 @@ type byteBuster interface {
 	Write(addr uint64, value uint8) bool
 	SetBaseAddr(addr uint32)
 	SetEntryPoint(addr uint32)
-	SetUnixTime(addr uint32)
 	BaseAddress() uint64
 	EntryPoint() uint64
 	EntryPointIsSet() bool
-
 	SetBigEntryPoint(addr uint32)
 	SetBigBaseAddr(addr uint32)
-	UnixTime() uint32
+	SetParameter(i int, value uint64)
+	GetParameter(i int) uint64
 }
 
 const entryPointSentinal = 0x22222
@@ -38,8 +37,8 @@ type fakeByteBuster struct {
 	lineOffset uint64
 	values     []byte
 	entryPoint uint64
-	unixtime   uint32
 	t          *testing.T
+	param      [4]uint64
 }
 
 func (f *fakeByteBuster) SetEntryPoint(addr uint32) {
@@ -47,8 +46,11 @@ func (f *fakeByteBuster) SetEntryPoint(addr uint32) {
 	f.entryPoint = prev | uint64(addr)
 }
 
-func (f *fakeByteBuster) SetUnixTime(t uint32) {
-	f.unixtime = t
+func (f *fakeByteBuster) SetParameter(i int, v uint64) {
+	f.param[i] = v
+}
+func (f *fakeByteBuster) GetParameter(i int) uint64 {
+	return f.param[i]
 }
 
 func (f *fakeByteBuster) SetBaseAddr(addr uint32) {
@@ -88,10 +90,6 @@ func (f *fakeByteBuster) EntryPoint() uint64 {
 	return f.entryPoint
 }
 
-func (f *fakeByteBuster) UnixTime() uint32 {
-	return f.unixtime
-}
-
 func (f *fakeByteBuster) Write(addr uint64, value uint8) bool {
 	//f.t.Logf("addr %x value %x, addrExpected %x valueExpected %x",addr,value,baseAddr,f.values[f.written])
 	if addr != f.BaseAddress()+f.lineOffset+uint64(f.written) {
@@ -117,8 +115,8 @@ type MetalByteBuster struct {
 	baseAdd    uint64
 	lineOffset uint32
 	entryPoint uint64
-	unixTime   uint32
 	written    uint32
+	param      [4]uint64
 }
 
 //set entry point affects the LOWER 32 bits of the entry point
@@ -131,9 +129,6 @@ func (m *MetalByteBuster) SetEntryPoint(addr uint32) {
 func (m *MetalByteBuster) SetBigEntryPoint(addr uint32) {
 	prev := m.entryPoint & 0xffff_ffff
 	m.entryPoint = prev | (uint64(addr) << 32)
-}
-func (m *MetalByteBuster) SetUnixTime(t uint32) {
-	m.unixTime = t
 }
 
 // SetBigBaseAddr sets the HIGH order 32 bits of the base address
@@ -165,10 +160,6 @@ func (m *MetalByteBuster) EntryPoint() uint64 {
 	return m.entryPoint
 }
 
-func (m *MetalByteBuster) UnixTime() uint32 {
-	return m.unixTime
-}
-
 func (m *MetalByteBuster) Write(addr uint64, value uint8) bool {
 	a := (*uint8)(unsafe.Pointer(uintptr(addr)))
 	*a = value
@@ -177,6 +168,12 @@ func (m *MetalByteBuster) Write(addr uint64, value uint8) bool {
 }
 func (m *MetalByteBuster) EntryPointIsSet() bool {
 	return m.entryPoint != entryPointSentinal
+}
+func (m *MetalByteBuster) SetParameter(i int, v uint64) {
+	m.param[i] = v
+}
+func (m *MetalByteBuster) GetParameter(i int) uint64 {
+	return m.param[i]
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -231,4 +228,9 @@ func (n *nullByteBuster) SetBigEntryPoint(addr uint32) {
 }
 
 func (n *nullByteBuster) SetBigBaseAddr(addr uint32) {
+}
+func (n *nullByteBuster) SetParameter(i int, v uint64) {
+}
+func (n *nullByteBuster) GetParameter(i int) uint64 {
+	return 0
 }
