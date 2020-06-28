@@ -76,7 +76,7 @@ var DomainZero = DomainControlBlock{
 		0, 0, 0, 0, 0, 0},
 	State:        DomainStateRunning,
 	Counter:      0,
-	Priority:     5,
+	Priority:     2,
 	PreemptCount: 0,
 	Stack:        0,
 	Flags:        uint64(DomainFlagKernelThread),
@@ -115,7 +115,8 @@ func DomainCopy(fn FuncPtr, arg uint64) JoyError {
 	}
 	top := uintptr(newStackLast) + uintptr(KPageSize-16)
 	trust.Debugf("domain being allocated (new one) -- stack root is at %x ",
-		"(prio? %d) and current=%x", newStack1st, CurrentDomain.Priority, CurrentDomain)
+		"(prio? %d) and current=%x", uintptr(newStack1st),
+		CurrentDomain.Priority, uintptr(unsafe.Pointer(CurrentDomain)))
 	newDomain := (*DomainControlBlock)(unsafe.Pointer(uintptr(newStack1st)))
 
 	newHeap1st, newHeapLast, err := KMemoryGetFreeContiguousPages(KernelProcHeapPages)

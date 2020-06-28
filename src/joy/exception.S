@@ -62,18 +62,30 @@ ex_el1:
     stp	x5, x6, [sp, #-16]!
     stp	x3, x4, [sp, #-16]!
     stp	x1, x2, [sp, #-16]!
-    str	x0, [sp, #-16]!
+
+    mrs	x22, elr_el1
+    mrs	x23, spsr_el1
+
+    stp	x0,x22, [sp, #-16]!             //to make eret work right
+    str x23, [sp, #-16]!                //to make eret work right
 
     ldr x5, =raw_exception_handler      // Address to raw exception handler
     mrs x1, esr_el1                     // get syndrome register
-    mrs x2, elr_el1                     // get link register
+    mov x2, x22                         // get link register
     mrs x3, CurrentEL
     lsr x3,x3,#2
     mrs x4, mpidr_el1                   // Fetch core Id
     and x4, x4, #0x3                    // Create 2 bit mask of core Id
     blr x5                              // Call raw exception handler
 
-    ldr	x0, [sp], #16
+    mrs	x22, elr_el1                    //to make eret work right
+    mrs	x23, spsr_el1                   //to make eret work right
+    ldr	x23, [sp], #16
+    ldp	x0,x22, [sp], #16
+
+	msr	elr_el1, x22
+	msr	spsr_el1, x23
+
     ldp	x1, x2, [sp], #16
     ldp	x3, x4, [sp], #16
     ldp	x5, x6, [sp], #16
@@ -123,8 +135,10 @@ joy.cpuSwitchTo:
 	ret
 
 .globl joy.setHeapPointers
+
 .extern _heap_start
 .extern _heap_end
+
 joy.setHeapPointers:
 	adrp x2,_heap_start
 	adrp x3,_heap_end
@@ -142,7 +156,10 @@ joy.setHeapPointers:
 
 .extern PermitPreemption
 schedule_tail:
+	str x30, [sp, #-16]!                      //save the link reg so we can get back
     bl    PermitPreemption
+	ldr x30, [sp, #16]                      //save the link reg so we can get back
+    mov x30, x19
     ret
 
 .globl joy.retFromFork
@@ -151,7 +168,8 @@ joy.retFromFork:
     mov    x0, x20
     blr    x19
 
-// where the bootloader params end up
+// where the bootloader params end up, gotta make sure this is 8 byte aligned
+.align 3
 .global bootloader_params
 bootloader_params:
 	.space 256

@@ -1,6 +1,7 @@
 package upbeat
 
 import (
+	"bytes"
 	"fmt"
 	"unsafe"
 
@@ -40,12 +41,18 @@ type FBConsole struct {
 
 // clear the display
 func (f *FBConsole) Clear() {
-	for i := uint32(0); i < f.info.Width; i++ {
-		for j := uint32(0); j < f.info.Height; j++ {
-			dest := (*byte)(unsafe.Pointer(uintptr((i * f.info.Pitch) + (j * 4))))
-			*dest = 0
-		}
+	buffer := bytes.Buffer{}
+	trust.Debugf("Clear reached")
+	for j := 0; j < int(f.maxX); j++ {
+		buffer.WriteByte(0x20) //space
 	}
+	empty := buffer.String()
+	for i := uint32(0); i < f.maxY; i++ { //row
+		f.currentX = 0
+		f.currentY = i
+		f.print(empty)
+	}
+	f.currentX = 0 //reset to top
 }
 
 // display a string on screen

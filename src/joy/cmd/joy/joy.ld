@@ -31,6 +31,8 @@ SECTIONS
 	_end = .;
 
    /DISCARD/ : { *(.comment) *(.gnu*) *(.note*) *(.eh_frame*)}
+
+	. = ALIGN(8);
 }
 
 /* For the memory allocator. */

@@ -1,7 +1,6 @@
 package joy
 
 import (
-	"lib/trust"
 	"lib/upbeat"
 
 	"unsafe"
@@ -32,10 +31,8 @@ func KMemoryInit() JoyError {
 	if err != JoyNoError {
 		return err
 	}
-	trust.Debugf("code alloc %d", pg)
 	ptr := uintptr(pagePtr)
 	for ptr+uintptr(KPageSize) < uintptr(upbeat.BootloaderParams.KernelLast) {
-		trust.Debugf("code alloc -- %d", pg)
 		pg++
 		pagePtr, err = KMemorySetInUse(pg)
 		if err != JoyNoError {
@@ -46,7 +43,6 @@ func KMemoryInit() JoyError {
 	//stack and heap was set up by the bootloader, but we want our data structs
 	//to reflect this properly
 	pg++
-	trust.Debugf("stack alloc %d", pg)
 	pagePtr, err = KMemorySetInUse(pg)
 	if err != JoyNoError {
 		return err
@@ -55,7 +51,6 @@ func KMemoryInit() JoyError {
 	ptr = uintptr(pagePtr)
 	for ptr+uintptr(KPageSize) < uintptr(upbeat.BootloaderParams.StackPointer) {
 		pg++
-		trust.Debugf("stack -- alloc %d", pg)
 		pagePtr, err := KMemorySetInUse(pg)
 		if err != JoyNoError {
 			return err
@@ -75,7 +70,6 @@ func KMemoryInit() JoyError {
 	if err != JoyNoError {
 		return err
 	}
-	trust.Debugf("heap alloc %d", pg)
 	ptr = uintptr(pagePtr)
 	for ptr+uintptr(KPageSize) < uintptr(end) {
 		pg++
@@ -83,7 +77,6 @@ func KMemoryInit() JoyError {
 		if err != JoyNoError {
 			return err
 		}
-		trust.Debugf("heap alloc -- %d", pg)
 		ptr = uintptr(pagePtr)
 	}
 
