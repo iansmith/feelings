@@ -3,29 +3,33 @@ package joy
 import "fmt"
 
 const subsystemMask = 0x00ff_0000_0000_0000
-const domainIDMask = 0x0000_ffff_0000_0000
+const familyIDMask = 0x0000_ffff_0000_0000
 const errorNumberMask = 0x0000_0000_0000_ffff
 
 const JoyNoError = JoyError(0)
 
-// Memory Errors
+// Subsystems
 const MemorySubsystem = 1
+const FamilySubsystem = 2
+
+// Memory Errors
 const MemoryPageAlreadyInUse = 1
 const MemoryPageNotAvailable = 2
 const MemoryBadPageRequest = 3
 const MemoryAlreadyFree = 4
 const MemoryContiguousNotAvailable = 5
+const MemoryPageAlreadyFree = 6
 
 var ErrorMemoryPageAlreadyInUse = errorValue(MemorySubsystem, MemoryPageAlreadyInUse)
 var ErrorMemoryPageNotAvailable = errorValue(MemorySubsystem, MemoryPageNotAvailable)
 var ErrorMemoryBadPageRequest = errorValue(MemorySubsystem, MemoryBadPageRequest)
 var ErrorMemoryAlreadyFree = errorValue(MemorySubsystem, MemoryAlreadyFree)
+var ErrorMemoryPageAlreadyFree = errorValue(MemorySubsystem, MemoryPageAlreadyFree)
 
-// Domain Errors
-const DomainSubsystem = 2
-const DomainNoMoreDomains = 1
+// familyImpl Errors
+const FamilyNoMoreFamilies = 1
 
-var ErrorDomainNoMoreDomains = errorValue(DomainSubsystem, DomainNoMoreDomains)
+var ErrorFamilyNoMoreFamilies = errorValue(FamilySubsystem, FamilyNoMoreFamilies)
 
 type JoyError uint64
 type RawJoyError uint64 // error with just the constant part of the value filled in
@@ -52,8 +56,8 @@ func errorText(raw uint64) string {
 	if !ok {
 		return "Unknown error code"
 	}
-	did := raw & domainIDMask
-	return fmt.Sprintf("Domain %d: %s", did, t) //xxx allocation
+	did := raw & familyIDMask
+	return fmt.Sprintf("familyImpl %d: %s", did, t) //xxx allocation
 }
 
 func errorValue(subsys byte, errorNumber uint16) RawJoyError {
@@ -62,9 +66,9 @@ func errorValue(subsys byte, errorNumber uint16) RawJoyError {
 	return RawJoyError(ss | en)
 }
 
-// MakeError adds the dynamic fields (like current domain) to the error value.
+// MakeError adds the dynamic fields (like current family) to the error value.
 func MakeError(rawError RawJoyError) JoyError {
 	raw := uint64(rawError)
-	did := (CurrentDomain.Id << 32) & domainIDMask
+	did := (currentFamily.Id << 32) & familyIDMask
 	return JoyError(raw | did)
 }

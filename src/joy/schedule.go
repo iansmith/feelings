@@ -43,63 +43,63 @@ func InitGIC() {
 }
 
 func timerTick() {
-	if CurrentDomain == nil {
+	if currentFamily == nil {
 		trust.Fatalf(1, "got a timer tick with no current domain!")
 	}
-	if CurrentDomain.Counter > 0 {
-		CurrentDomain.Counter--
+	if currentFamily.counter > 0 {
+		currentFamily.counter--
 	}
-	trust.Debugf("timerTick: current domain: %d, counter %d", CurrentDomain.Id, CurrentDomain.Counter)
-	if CurrentDomain.Counter > 0 || CurrentDomain.PreemptCount > 0 {
+	trust.Debugf("timerTick: current domain: %d, counter %d", currentFamily.Id, currentFamily.counter)
+	if currentFamily.counter > 0 || currentFamily.preemptCount > 0 {
 		return
 	}
-	CurrentDomain.Counter = 0
+	currentFamily.counter = 0
 	EnableIRQAndFIQ()
 	scheduleInternal()
 	DisableIRQAndFIQ()
 }
 
 func schedule() {
-	CurrentDomain.Counter = 0
+	currentFamily.counter = 0
 	scheduleInternal()
 }
 
 func scheduleInternal() {
-	DisallowPreemption()
+	prohibitPreemption()
 	trust.Debugf("schedule internal reached!")
-	var p *DomainControlBlock
+	var p *family
 	next := uint16(0)
 	for {
 		c := int64(-1)
-		for i := uint16(0); i < uint16(len(Domain)); i++ {
-			p = Domain[i]
-			if p != nil && p.State == DomainStateRunning && p.Counter > c {
-				c = p.Counter
+		for i := uint16(0); i < uint16(len(familyImpl)); i++ {
+			p = familyImpl[i]
+			if p != nil && p.state == fsRunning && p.counter > c {
+				c = p.counter
 				next = i
 			}
 		}
 		if c > 0 {
 			break
 		}
-		for i := uint16(0); i < uint16(len(Domain)); i++ {
-			p = Domain[i]
+		for i := uint16(0); i < uint16(len(familyImpl)); i++ {
+			p = familyImpl[i]
 			if p != nil {
-				p.Counter = (p.Counter >> 1) + p.Priority
-				trust.Debugf("updated counter on %d: %d (from prio %d)", i, p.Counter, p.Priority)
+				p.counter = (p.counter >> 1) + p.priority
+				trust.Debugf("updated counter on %d: %d (from prio %d)", i, p.counter, p.priority)
 			}
 		}
 	}
-	switchToDomain(Domain[next])
-	PermitPreemption()
+	switchToDomain(familyImpl[next])
+	permitPreemption()
 }
 
-func switchToDomain(next *DomainControlBlock) {
-	if CurrentDomain == next {
+func switchToDomain(next *family) {
+	if currentFamily == next {
 		return //safety
 	}
-	prev := CurrentDomain
-	CurrentDomain = next
-	trust.Debugf("----- cpuSwitchFrom DCB=%p cpuSwitchTo DCB=%p (SP=%x, PC=%x)", prev, next, next.RSS.SP, next.RSS.PC)
+	prev := currentFamily
+	currentFamily = next
+	trust.Debugf("----- cpuSwitchFrom DCB=%p cpuSwitchTo DCB=%p (SP=%x, PC=%x)", prev, next, next.rss.SP, next.rss.PC)
 	cpuSwitchTo(unsafe.Pointer(prev), unsafe.Pointer(next), 0)
 }
 

@@ -22,25 +22,30 @@ func KernelMain() {
 	tgr.ReInit()
 	initExceptionVector()
 
-	err := KMemoryInit()
+	trust.Debugf("kernelMain1")
+	err := KMemAPI.Init()
 	if err != JoyNoError {
 		panic(JoyErrorMessage(err))
 	}
-	InitDomains()
+	trust.Debugf("kernelMain2")
+	FamilyAPI.Init()
 	InitGIC()
 	InitSchedulingTimer()
 
-	err = DomainCopy(displayInfoPtr, 0)
+	trust.Debugf("kernelMain3")
+	_, err = FamilyAPI.Copy(0, displayInfoPtr, 0)
 	if err != JoyNoError {
 		trust.Errorf("unable to start display info process:", JoyErrorMessage(err))
 		return
 	}
-	err = DomainCopy(terminalTestPtr, 0)
+	trust.Debugf("kernelMain4")
+	_, err = FamilyAPI.Copy(0, terminalTestPtr, 0)
 	if err != JoyNoError {
 		trust.Errorf("unable to start terminal test process:", JoyErrorMessage(err))
 		return
 	}
 
+	trust.Debugf("kernelMain5")
 	EnableIRQAndFIQ()
 	for {
 		schedule()

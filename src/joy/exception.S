@@ -136,30 +136,16 @@ joy.cpuSwitchTo:
 
 .globl joy.setHeapPointers
 
+// per family heap info
 .extern _heap_start
 .extern _heap_end
-
-joy.setHeapPointers:
-	adrp x2,_heap_start
-	adrp x3,_heap_end
-	str x0,[x2]
-	str x1,[x3]
-	ret
-
-//.global joy.LaunderFunctionPtr0
-//joy.LaunderFunctionPtr0:  //reg 0 is the parameter, just return it
-//	ret
-
-//.global joy.LaunderFunctionPtr1
-//joy.LaunderFunctionPtr1:  //reg 0 is the parameter, just return it
-//	ret
 
 .extern PermitPreemption
 schedule_tail:
 	str x30, [sp, #-16]!                      //save the link reg so we can get back
-    bl    PermitPreemption
-	ldr x30, [sp, #16]                      //save the link reg so we can get back
-    mov x30, x19
+    bl    permit_preemption
+	ldr x30, [sp], #16                        //save the link reg so we can get back
+    //mov x30, x19
     ret
 
 .globl joy.retFromFork

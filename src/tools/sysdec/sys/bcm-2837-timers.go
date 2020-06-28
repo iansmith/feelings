@@ -51,7 +51,7 @@ status bit and the corresponding interrupt request line.`,
 			},
 		},
 		"LeastSignificant32": {
-			Description: `System Timer Counter Lower 32 bits.The system 
+			Description: `System Timer counter Lower 32 bits.The system 
 timer free-running counter lower register is a read-only register that 
 returns the current value of the lower 32-bits of the free running counter.`,
 			AddressOffset: 0x4,
@@ -59,7 +59,7 @@ returns the current value of the lower 32-bits of the free running counter.`,
 			Access:        sysdec.Access("r"),
 		},
 		"MostSignificant32": {
-			Description: `System Timer Counter Upper 32 bits.The system 
+			Description: `System Timer counter Upper 32 bits.The system 
 timer free-running counter higher register is a read-only register that 
 returns the current value of the higher 32-bits of the free running counter.`,
 			AddressOffset: 0x8,

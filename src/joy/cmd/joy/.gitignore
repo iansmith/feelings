@@ -2,3 +2,4 @@ joy
 joy.hardware
 *.o
 font.psf
+funcptrs.S
