@@ -21,6 +21,8 @@ var asyncScheduler = false
 
 //go:noinline
 func ReInit() {
+	initHeap()
+
         tmp:=((*uint64)(unsafe.Pointer(&heapStartSymbol)))
         heapStart = uintptr(*tmp)
         tmp=((*uint64)(unsafe.Pointer(&heapEndSymbol)))
@@ -28,7 +30,7 @@ func ReInit() {
         tmp=((*uint64)(unsafe.Pointer(&stackTopSymbol)))
         stackTop = uintptr(*tmp)
 
-        heapptr = heapStart
+        //heapptr = heapStart
 
 }
 

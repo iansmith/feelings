@@ -29,7 +29,6 @@ _enable_mmu_tables:
 	isb
 	ret
 
-
 .globl jump_to_kernel
 jump_to_kernel:
 	//need to jump to kernel, it's entry was passed as first

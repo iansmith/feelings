@@ -121,24 +121,22 @@ func (s *loadableSectionEmitter) next() bool {
 		s.state = swData
 		if !s.loadable.inflate {
 			s.seeker = s.sect.Open()
-			s.seeker.Seek(0, io.SeekStart)
+			//at start s.current==0 but later we may pass a 64K boundary
+			//and in that case it will not be ==0
+			s.seeker.Seek(int64(s.current), io.SeekStart)
 		}
-		s.current = 0
 		return true
 	case swData:
 		s.current += uint32(s.pendingLineLength)
 		if uint64(s.current) == s.sect.Size {
 			return false
 		}
-		if s.current == s.resetPoint {
-			log.Printf("we are resetting current location because nearing 16 bit limit")
-			s.resetPoint += resetIncrement
-			s.state = swBigAddr
-		}
 		return true
 	}
 	panic("unexpected emitter state")
 }
+
+var rollover = ^uint64(0xffff)
 
 //string return value here is of limited value, it's already been transmitted
 func (s *loadableSectionEmitter) line() (string, error) {
@@ -197,7 +195,18 @@ func (s *loadableSectionEmitter) line() (string, error) {
 		if uint32(s.sect.Size)-s.current < payloadSize {
 			payloadSize = uint32(s.sect.Size) - s.current
 		}
+		trimmed := false
 		currentLowest16ForProtocol := uint16(s.current&0xffff) + uint16(s.sect.Addr&0xffff)
+		lowest16As32 := uint32(currentLowest16ForProtocol)
+		if lowest16As32+payloadSize > 0xffff {
+			diff := (0x10000 - (lowest16As32 + payloadSize))
+			if diff > 0 { //may have already been aligned perfectly
+				//too big, gotta trim
+				payloadSize -= diff //subtract difference, possibly zero
+			}
+			log.Printf("trimmed: %d", diff)
+			trimmed = true
+		}
 		var result string
 		if s.loadable.inflate {
 			result = anticipation.EncodeDataBytes(s.buffer[:payloadSize], currentLowest16ForProtocol)
@@ -217,6 +226,15 @@ func (s *loadableSectionEmitter) line() (string, error) {
 		if err != nil {
 			return "", err
 		}
+		if trimmed { //we succeceded with the last line of this 64k bunch
+			s.loadable.vaddr += 0x10000
+			s.state = swStart //force resend starting next packet
+			//tricky: this means that we will not add pending count on next
+			//packet, so we better do it ourselves
+			s.current += uint32(s.pendingLineLength)
+			s.pendingLineLength = 0 //don't want to do it twice
+		}
+
 		return result, nil
 	}
 	panic("unexpected emitter state!")

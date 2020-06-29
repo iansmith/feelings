@@ -2,6 +2,7 @@
   "inherits": [
     "rpi3"
   ],
+  "gc": "conservative",
   "linkerscript":  "joy.ld",
   "extra-files": [
   ]

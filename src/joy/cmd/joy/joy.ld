@@ -38,6 +38,6 @@ SECTIONS
 /* For the memory allocator. */
 _globals_start = _sdata;
 _globals_end = _ebss;
-_stack_top = 0xA0000;
+/*_stack_top = 0xA0000;*/
 _heap_start = _end;
 _heap_end = _heap_start + 0x200000; /* 2Mb*/

@@ -10,7 +10,7 @@
 	"ldflags": [
 	],
 	"scheduler": "none",
-	"gc": "leaking",
+	"gc": "conservative",
 	"cflags": [
 		"-mcpu=cortex-a53",
 		"--target=aarch64-elf",

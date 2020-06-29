@@ -281,7 +281,8 @@ outer:
 			log.Printf("<-- %s", l)
 		}
 		if len(l) == 0 {
-			log.Printf("ignoring empty line")
+			log.Printf("ignoring empty response, maybe should RETRY??\n")
+			//sendLineToDevice(tx)
 			continue
 		}
 

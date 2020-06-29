@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"unsafe"
 
 	"device/arm"
@@ -124,7 +125,7 @@ func main() {
 		if err != nil {
 			machine.MiniUART.WriteString("! processing error:" + err.Error() + " " + s[0:16] + "\n")
 		} else {
-			machine.MiniUART.WriteString(". " + s[0:16] + "\n")
+			machine.MiniUART.WriteString(". accept: " + s[0:16] + "\n")
 		}
 		if done {
 			break
@@ -212,7 +213,10 @@ func processLine(line string) (bool, error) {
 		end--
 	}
 	// just do what the line says
-	converted, lt, _, err := anticipation.DecodeAndCheckStringToBytes(line[:end])
+	converted, lt, addr, err := anticipation.DecodeAndCheckStringToBytes(line[:end])
+	if addr == 0x0 && metal.BaseAddress() == 0xfffffc0030000000 && lt == anticipation.DataLine {
+		log.Printf("line is %s", line[:end])
+	}
 	if err != nil {
 		return false, err
 	}

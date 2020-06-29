@@ -170,9 +170,9 @@ start:
 	//stack pointer is in the structure, but put into sp and store in _stack_top
 	ldr x5,[x0,#24]
 	mov sp, x5
-//	adrp x6, _stack_top
-//	add x6,x6,#:lo12:_stack_top
-//	str x5,[x6]
+	adrp x6, _stack_top
+	add x6,x6,#:lo12:_stack_top
+	str x5,[x6]
 
 
 	// heap start is in the struction
@@ -186,4 +186,54 @@ start:
 	add x6,x6,#:lo12:_heap_end
 	ldr x5,[x0,#40]
 	str x5,[x6]
+
 	b kernel_main
+
+.global _stack_top
+_stack_top:
+	.dword 0
+
+.global  tinygo_scanstack
+.global  tinygo_scanCurrentStack
+.type    tinygo_scanCurrentStack, %function
+tinygo_scanCurrentStack:
+   // Push callee-saved registers onto the stack.
+   	mov	x0, sp
+    stp	x29, x30, [sp, #-16]!
+    stp	x27, x28, [sp, #-16]!
+    stp	x25, x26, [sp, #-16]!
+    stp	x23, x24, [sp, #-16]!
+    stp	x21, x22, [sp, #-16]!
+    stp	x19, x20, [sp, #-16]!
+
+	//x0 already has the SP,just call it
+    bl tinygo_scanstack
+
+    // Restore return address.
+    ldp	x19, x20, [sp], #16
+    ldp	x21, x22, [sp], #16
+    ldp	x23, x24, [sp], #16
+    ldp	x25, x26, [sp], #16
+    ldp	x27, x28, [sp], #16
+    ldp	x29, x30, [sp], #16
+
+	// Return to the caller.
+    ret
+
+
+semihostingCharBuffer:
+.dword
+
+// special putchar with no allocs
+// Call(uint64(Semihostingv2OpWriteC), uintptr(unsafe.Pointer(&c)))
+.global semihosting_putchar
+semihosting_putchar:
+	mov x1, x0
+	mov x0,#0x03 //write c
+	adrp x2,semihostingCharBuffer
+	str x1, [x2]
+	mov x1, x2 //get addr of place we put it
+	hlt 0xf000
+	mov x0, xzr
+	ret
+

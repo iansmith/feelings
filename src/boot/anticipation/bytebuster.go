@@ -1,6 +1,7 @@
 package anticipation
 
 import (
+	"log"
 	"testing"
 	"unsafe"
 )
@@ -160,9 +161,15 @@ func (m *MetalByteBuster) EntryPoint() uint64 {
 	return m.entryPoint
 }
 
+var tmp = uint64(0xf)
+
 func (m *MetalByteBuster) Write(addr uint64, value uint8) bool {
 	a := (*uint8)(unsafe.Pointer(uintptr(addr)))
 	*a = value
+
+	if (addr & ^(tmp)) == 0xfffffc0030000000 {
+		log.Printf("xxx at place: %x, value %x", addr, value)
+	}
 	m.written++
 	return true
 }

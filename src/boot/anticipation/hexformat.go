@@ -85,6 +85,7 @@ func hexLineTypeFromInt(i int) HexLineType {
 ///////////////////////////////////////////////////////////////////////////////////
 // DECODE
 ///////////////////////////////////////////////////////////////////////////////////
+var fart = uint64(0xf)
 
 // deal with a received hex line and return (error?,done?)
 func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
@@ -98,6 +99,9 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 		for i := uint64(0); i < uint64(l); i++ {
 			addr := baseAddr + i
 			val = converted[4+i]
+			if addr&(^fart) == 0xfffffc0030000000 {
+				log.Printf("processing line %x -> %x %+v", addr, val, converted)
+			}
 			if !bb.Write(addr, val) {
 				return true, false
 			}

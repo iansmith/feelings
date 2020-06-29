@@ -25,7 +25,9 @@ func ReInit() {
 	tmp=((*uint64)(unsafe.Pointer(&stackTopSymbol)))
 	stackTop = uintptr(*tmp)
 
-	heapptr = heapStart
+	initHeap()
+
+//	heapptr = heapStart
 	
 }
 
@@ -64,8 +66,7 @@ func main() {
 }
 
 func putchar(c byte) {
-	Semihostingv2Call(uint64(Semihostingv2OpWriteC), uint64(uintptr(unsafe.Pointer(&c))))
-
+	Semihostingv2Putchar(c)
 }
 
 //go:extern _sbss
@@ -75,11 +76,11 @@ var _sbss [0]byte
 var _ebss [0]byte
 
 func abort() {
-	Semihostingv2Call(uint64(Semihostingv2OpExit), uint64(Semihostingv2StopRuntimeErrorUnknown))
+	Semihostingv2Call(uint64(Semihostingv2OpExit), uintptr(Semihostingv2StopRuntimeErrorUnknown))
 }
 
 func Exit() {
-	Semihostingv2Call(uint64(Semihostingv2OpExit), uint64(Semihostingv2StopApplicationExit))
+	Semihostingv2Call(uint64(Semihostingv2OpExit), uintptr(Semihostingv2StopApplicationExit))
 }
 
 func postinit() {
@@ -120,7 +121,10 @@ var semihostingParamBlock uint64
 //semihosting_call (the second param may be a value or a pointer)
 //if it is a pointer, it will point to semihosting_param_block
 //export semihosting_call
-func Semihostingv2Call(op uint64, param uint64) uint64
+func Semihostingv2Call(op uint64, param uintptr) uint64
+
+//go:export semihosting_putchar
+func Semihostingv2Putchar(byte) uint64
 
 //Semihostingv2ClockMicros is supposed to return micros since the program
 //started. However, the underlying call is supposed to return centiseconds

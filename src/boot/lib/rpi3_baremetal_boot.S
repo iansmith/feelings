@@ -400,10 +400,27 @@ GPUaddrToARMaddr:
 .ltorg                                      // Tell assembler ltorg data for this code can go here
 .size GPUaddrToARMaddr, .-GPUaddrToARMaddr
 
+/*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++}
+{				Version 2 Semihosting Calls (for QEMU 5)          		    }
+{++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 .globl semihosting_call                     // support for ARM v2 semihosting (qemu)
 semihosting_call:
     hlt 0xf000
     ret
+
+semihostingCharBuffer:
+.dword
+
+// special putchar with no allocs
+// Call(uint64(Semihostingv2OpWriteC), uintptr(unsafe.Pointer(&c)))
+.global semihosting_putchar
+semihosting_putchar:
+	mov x1, x0
+	mov x0,#0x03 //write c
+	adrp x2,semihostingCharBuffer
+	str x1, [x2]
+	mov x1, x2 //get addr of place we put it
+	hlt 0xf000
 
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++}
 {				IRQ HELPER ROUTINES PROVIDE BY RPi-SmartStart API		    }
