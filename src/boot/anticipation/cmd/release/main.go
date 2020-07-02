@@ -5,7 +5,6 @@ import (
 
 	"boot/anticipation"
 
-	"debug/elf"
 	"flag"
 	"fmt"
 	"io"
@@ -13,7 +12,6 @@ import (
 	"os"
 )
 
-const uint64signal = uint64(0x1234567887654321)
 const KernelLoadPoint = 0xfffffc0000000000
 const PageSize = 0x10000
 
@@ -41,34 +39,7 @@ type BootloaderParamsDef struct {
 	HeapEnd      uint64
 }
 
-///////////////////////////////////////////////////////////////////////
-// loadableSect is how we match up program headers to sections
-///////////////////////////////////////////////////////////////////////
-type loadableSect struct {
-	name        string
-	vaddr       uint64
-	entrypoint  uint64
-	inflate     bool
-	addressType anticipation.HexLineType
-}
-
-func newLoadableSect(name string, v uint64, inflate bool, flg elf.SectionFlag, size uint64) *loadableSect {
-	if flg&elf.SHF_ALLOC == 0 {
-		log.Fatalf("unable to process sect %s: it does not have the SHF_ALLOC flag", name)
-	}
-	if size > 0xffffffff {
-		log.Fatalf("unable to process sect %s, it is larger than 0xffffffff (32 bits): %x", name, size)
-	}
-	return &loadableSect{
-		name:       name,
-		vaddr:      v,
-		inflate:    inflate,
-		entrypoint: uint64signal,
-	}
-}
-func (l *loadableSect) setEntryPoint(a uint64) {
-	//no restriction on the size anymore, this was previously used to trap > 32 bit size values
-}
+var KeySymbols = []string{"bootloader_params"}
 
 ///////////////////////////////////////////////////////////////////////
 // main
@@ -81,82 +52,39 @@ func main() {
 	if *helpFlag {
 		usage()
 	}
-	fp, err := elf.Open(flag.Arg(0))
+	lsl, err := newLoadableSectionListener(flag.Arg(0))
 	if err != nil {
 		log.Fatalf(" %v", err)
 	}
+	if err := lsl.Process(KeySymbols); err != nil {
+		log.Fatalf("%s: %v", flag.Arg(0), err)
+	}
 	if *verbose > 0 {
-		log.Printf("@@@ opening file %s, entry point is %x", flag.Arg(0), fp.Entry)
+		ep, name := lsl.GetEntry()
+		log.Printf("@@@ opening file %s, entry point is %x in %s",
+			flag.Arg(0), ep, name)
 	}
-	defer fp.Close()
+	defer lsl.Close()
 
-	//get a list of loadable sections
-	lsect := []*loadableSect{}
-	for _, section := range fp.Sections {
-		switch section.Name {
-		case ".text", ".rodata", ".data", ".exc":
-			lsect = append(lsect, newLoadableSect(section.Name, section.Addr, false, section.Flags, section.Size))
-		case ".bss":
-			lsect = append(lsect, newLoadableSect(section.Name, section.Addr, true, section.Flags, section.Size))
-		}
+	v, hasBootloaderSym := lsl.SymbolValue(KeySymbols[0])
+	if !hasBootloaderSym {
+		log.Fatalf("unable to find %s in the elf file", KeySymbols[0])
 	}
-
-	//no need to check entry point for 32 bits anymore
-	entryPoint := fp.Entry
-
-	//walk program headers, marking the sections as needed in terms of where and when to load
-	for _, prog := range fp.Progs {
-		if prog.ProgHeader.Type&elf.PT_LOAD == 0 {
-			continue
-		}
-		for _, ls := range lsect {
-			s := fp.Section(ls.name)
-			if entryPoint >= ls.vaddr && entryPoint < ls.vaddr+s.Size {
-				ls.entrypoint = entryPoint
-				bootloaderParamsCopy.EntryPoint = ls.entrypoint
-			}
-			if ls.vaddr+s.Size > bootloaderParamsCopy.KernelLast {
-				bootloaderParamsCopy.KernelLast = ls.vaddr + s.Size
-			}
-		}
-	}
-
-	symbols, err := fp.Symbols()
-	if err != nil {
-		log.Fatalf("unable to load symbols: %v", err)
-	}
-	for _, sym := range symbols {
-		if sym.Name == "bootloader_params" {
-			bootloaderParamsLocation = uint64(uintptr(sym.Value))
-			break
-		}
-	}
-
-	//check that we have an entry point
-	ok := false
-	for _, l := range lsect {
-		if l.entrypoint != uint64signal {
-			ok = true
-			break
-		}
-	}
-	if !ok {
-		log.Fatalf("unable to match entry point %x with any sect!", entryPoint)
-	}
+	bootloaderParamsLocation = v
 
 	//
 	// Where is the output going?
 	//
 
 	if *testFlag {
-		selfTest(flag.Arg(0), fp, lsect)
+		selfTest(flag.Arg(0), lsl)
 	}
 	if *ptyFlag != "" {
 		oh := newTTYIOProto(*ptyFlag)
 		if oh == nil {
 			log.Fatalf("unable to connect to %s", *ptyFlag)
 		}
-		protocol(flag.Arg(0), fp, lsect, oh)
+		protocol(flag.Arg(0), lsl, oh)
 	}
 	if !*testFlag && *ptyFlag == "" {
 		log.Printf("neither testflag nor pty flag/parameter supplied, not doing anything")
@@ -164,42 +92,45 @@ func main() {
 
 }
 
-func selfTest(filename string, fp *elf.File, lsect []*loadableSect) {
+func selfTest(filename string, lsl *loadableSectionListener) {
 
-	encodeAndDecode(filename, fp, lsect)
-	protocol(filename, fp, lsect, newAddrCheckReceiver())
+	encodeAndDecode(filename, lsl)
+	protocol(filename, lsl, newAddrCheckReceiver())
 }
 
-func encodeAndDecode(filename string, fp *elf.File, lsect []*loadableSect) {
-	for _, l := range lsect {
-		log.Printf("encoding test: test encoding of file %s, sect %s", filename, l.name)
-		if l.inflate {
+func encodeAndDecode(filename string, lsl *loadableSectionListener) {
+	for _, l := range lsl.AllSectionNames() {
+		log.Printf("encoding test: test encoding of file %s, sect %s", filename, l)
+		if lsl.MustIsInflate(l) {
 			continue //bss
 		}
-		s := fp.Section(l.name)
-		if s.Size == 0 {
+		s, err := lsl.SectionSize(l)
+		if err != nil {
+			log.Fatalf("unable to find section %s to get size", l)
+		}
+		if s == 0 {
 			continue // empty
 		}
 		buffer := make([]byte, anticipation.FileXFerDataLineSize)
 		bb := anticipation.NewNullByteBuster()
 		offset := uint64(0)
 		for {
-			if offset == s.Size {
+			if offset == s {
 				break
 			}
-			r, err := s.ReadAt(buffer, int64(offset))
+			r, err := lsl.ReadAt(l, buffer, int64(offset))
 			if err == io.EOF {
 				break
 			}
 			if err != nil {
 				log.Fatalf("failed trying to read sect of binary: %v", err)
 			}
-			line := anticipation.EncodeDataBytes(buffer[:r], uint16(offset))
+			line := anticipation.EncodeDataBytes(buffer[:r], offset)
 			converted, lt, addr, err := anticipation.DecodeAndCheckStringToBytes(line)
 			if lt != anticipation.DataLine {
 				log.Fatalf("unexpected line type: %s", lt)
 			}
-			if addr != uint32(offset) {
+			if uint64(addr) != (offset) {
 				log.Fatalf("unexpected offset (expected 0x%04x but got 0x%04x)", offset, addr)
 			}
 			if err != nil {
@@ -212,46 +143,35 @@ func encodeAndDecode(filename string, fp *elf.File, lsect []*loadableSect) {
 					log.Fatalf("bad encoding on byte %d from line %s", line)
 				}
 			}
-			offset += uint64(len(buffer))
+			offset += uint64(len(buffer[:r]))
 		}
 	}
 	log.Printf("encoding test: everything seems to be ok")
 }
 
-func protocol(filename string, fp *elf.File, lsect []*loadableSect, oh ioProto) {
+func protocol(filename string, lsl *loadableSectionListener, oh ioProto) {
 	//
-	//build a list of what we need
+	//build a list of emitters for each blob of stuff we send
 	//
-	emitterList := make([]emitter, len(lsect)+1) //+1 for kernel params emitter
-	for i, l := range lsect {
-		s := fp.Section(l.name)
-		se := newSectionEmitter(s, l, oh)
+
+	//two extra sections: one for kernel params, one for entry point
+	emitterList := make([]emitter, lsl.NumSections()+2)
+	for i, name := range lsl.AllSectionNames() {
+		se := newSectionEmitter(lsl, name, oh)
 		emitterList[i] = se
 	}
-	//last emmitter does the boot parameter copying magic
-	emitterList[len(lsect)] = newContstantParamsEmitter(bootloaderParamsLocation,
+
+	//entry point emitter
+	ep, n := lsl.GetEntry()
+	if ep == 0 || n == "" {
+		panic("no entry point set")
+	}
+	emitterList[lsl.NumSections()] = newConstantEntryPointEmitter(ep, oh)
+
+	//next emmitter does the boot parameter copying magic
+	emitterList[lsl.NumSections()+1] = newContstantParamsEmitter(bootloaderParamsLocation,
 		&bootloaderParamsCopy, oh)
-	//we need to set the bootloader params
-	bootloaderParamsCopy.UnixTime = uint64(time.Now().Unix())
-	page := uint64(KernelLoadPoint)
-	//does this page cover the kernel's loaded size
-	for page+(PageSize-1) < bootloaderParamsCopy.KernelLast {
-		page += PageSize
-	}
-	// kernel code takes N pages
-	// kernel stack takes 2 page (N+1, N+2
-	// kernel heap takes 8 pages (N+3...N+10)
-	page += (2 * PageSize)
-	//this is the "wrong" end of the stack page (if stack reaches here, we are hosed)
-	bootloaderParamsCopy.StackPointer = page + (PageSize - 0x10) //16 byte alignment required
-	page += PageSize
-	bootloaderParamsCopy.HeapStart = page
-	page += (7 * PageSize)
-	bootloaderParamsCopy.HeapEnd = page + (PageSize - 8) //END of N+10th page
-	log.Printf("kernel boot parameters: %#v and address %x", bootloaderParamsCopy, bootloaderParamsLocation)
-	if len(emitterList) < 2 {
-		log.Fatalf("unable to find any data to release! No sections for transmission!")
-	}
+	computeBootloaderParameters()
 
 	//
 	// Protocol Loop
@@ -259,7 +179,7 @@ func protocol(filename string, fp *elf.File, lsect []*loadableSect, oh ioProto) 
 
 	tx := newTransmitLooper(emitterList, oh)
 	if *verbose > 0 {
-		log.Printf("@@@ file %s, sect %s", filename, tx.current.name())
+		log.Printf("@@@ file %s, sect %s", filename, tx.current.sectionName())
 	}
 
 	//right now, we only use the first of 4 params
@@ -268,9 +188,8 @@ func protocol(filename string, fp *elf.File, lsect []*loadableSect, oh ioProto) 
 	tx.param[2] = 0
 	tx.param[3] = 0
 
-	name := tx.current.name()
-	copyOfSect := fp.Section(name)
-	tx.current.receiver().NewSection(copyOfSect)
+	name := tx.current.sectionName()
+	tx.current.receiver().NewSection(lsl, name)
 outer:
 	for {
 		l, err := tx.read()
@@ -297,14 +216,15 @@ outer:
 			if *verbose < 2 { //verbose user has already seen this, no sense repeating
 				log.Printf("!!! %s", l[1:])
 			}
-			log.Printf("RETRY offset addr 0x%08x in %s\n", tx.current.currentAddr(), tx.current.name())
+			log.Printf("RETRY offset addr 0x%08x in %s\n",
+				tx.current.nextAddr(), tx.current.sectionName())
 			tx.errorCount++
 			switch {
 			case tx.errorCount > 5:
 				log.Fatalf("aborting, too many errors in a row")
 			case tx.errorCount > 2:
 				tx.current.reset()
-				b := tx.current.next()
+				b := tx.current.moreLines()
 				if !b {
 					log.Fatalf("bad state, should never reset an empty emitter!")
 				}
@@ -316,13 +236,14 @@ outer:
 				tx.next() //called for effect
 				sendLineToDevice(tx)
 			case tsData:
-				if !tx.current.next() { //done with sect?
+				if !tx.current.moreLines() { //done with sect?
 					if tx.next() {
 						if *verbose > 0 {
-							log.Printf("@@@ file %s, sect %s", filename, tx.current.name())
+							log.Printf("@@@ file %s, section %s", filename,
+								tx.current.sectionName())
 						}
 					}
-					tx.current.receiver().NewSection(fp.Section(tx.current.name()))
+					tx.current.receiver().NewSection(lsl, name)
 				}
 				sendLineToDevice(tx)
 			case tsEnd:
@@ -382,10 +303,35 @@ func sendLineToDevice(tx *transmitLooper) {
 	// we get the line as a courtesy, but it's already been sent
 	l, err := tx.line()
 	if err != nil {
-		log.Fatalf("error reading next line from encoder: %v", err)
+		panic("here")
+		log.Fatalf("error reading moreLines line from encoder: %v", err)
 	}
 	if *verbose == 2 {
 		log.Printf("--> %s", l)
 	}
 
+}
+
+func computeBootloaderParameters() {
+	stackPages := uint64(2)
+	heapPages := uint64(8)
+
+	//we need to set the bootloader params
+	bootloaderParamsCopy.UnixTime = uint64(time.Now().Unix())
+	page := uint64(KernelLoadPoint)
+	//does this page cover the kernel's loaded size
+	for page+(PageSize-1) < bootloaderParamsCopy.KernelLast {
+		page += PageSize
+	}
+	// kernel code takes N pages
+	// example:kernel stack takes 2 page (N+1, N+2
+	// example: kernel heap takes 8 pages (N+3...N+10)
+	page += (stackPages * PageSize)
+	//this is the "wrong" end of the stack page (if stack reaches here, we are hosed)
+	bootloaderParamsCopy.StackPointer = page + (PageSize - 0x10) //16 byte alignment required
+	page += PageSize
+	bootloaderParamsCopy.HeapStart = page
+	page += (heapPages * PageSize)
+	bootloaderParamsCopy.HeapEnd = page + (PageSize - 8) //example: END of N+10th page
+	//log.Printf("kernel boot parameters: %#v and address %x", bootloaderParamsCopy, bootloaderParamsLocation)
 }

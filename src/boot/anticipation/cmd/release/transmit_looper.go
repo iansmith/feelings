@@ -59,8 +59,8 @@ func newTransmitLooper(all []emitter, oh ioProto) *transmitLooper {
 }
 
 //this returns false when we transition the tsEnd state, even though that
-//is a valid state... allows differentiation between next() to next emitter
-//and next() to end state.
+//is a valid state... allows differentiation between moreLines() to moreLines emitter
+//and moreLines() to end state.
 func (t *transmitLooper) next() bool {
 	if t.state == tsEnd { // are we done done?
 		log.Fatalf("bad state, transmitLooper should know its done!")
@@ -74,7 +74,7 @@ func (t *transmitLooper) next() bool {
 		return false
 	}
 	t.current = t.emitters[t.emitterIndex]
-	t.current.next()
+	t.current.moreLines()
 	t.emitterIndex++
 	return true
 }
@@ -87,7 +87,7 @@ func (t *transmitLooper) read() (string, error) {
 	return strings.TrimSpace(l), nil
 }
 
-const EOFLine = ":00000001FF"
+const EOFLine = ":00000000000000000001FF"
 
 func (t *transmitLooper) line() (string, error) {
 	switch t.state {

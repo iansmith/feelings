@@ -1,11 +1,10 @@
 package main
 
 import (
-	"boot/anticipation"
-	"debug/elf"
-	"io"
-	"log"
+	"fmt"
 	"unsafe"
+
+	"boot/anticipation"
 )
 
 const resetIncrement = 0xff00 //a little less than 64K
@@ -17,71 +16,51 @@ const resetIncrement = 0xff00 //a little less than 64K
 ///////////////////////////////////////////////////////////////////////////////
 type emitter interface {
 	line() (string, error)
-	next() bool //true if no more lines
-	reset()     //return to beginning of sect
-	name() string
+	moreLines() bool //true if no more lines
+	reset()          //return to beginning of sect
+	sectionName() string
 	read([]uint8) (string, error)
 	receiver() ioProto
-	currentAddr() uint32
+	nextAddr() uint64
 }
 
 // loadableSectionEmitter works from the blob of data in a loadable section of
 // an elf format binary
 type loadableSectionEmitter struct {
-	sect              *elf.Section
-	loadable          *loadableSect
-	state             emitterState
-	current           uint32
-	resetPoint        uint32
-	oh                ioProto
-	buffer            []uint8
-	seeker            io.ReadSeeker
-	pendingLineLength uint16
+	lsl    *loadableSectionListener
+	name   string
+	oh     ioProto
+	buffer []uint8
+	next   uint64
 }
 
-type emitterState int
+// type emitterState int
+//
+// const (
+// 	swStart         emitterState = 0
+// 	swEntryPoint    emitterState = 1
+// 	swAddr          emitterState = 2
+// 	swData          emitterState = 3
+// 	swBigEntryPoint emitterState = 4
+// 	swBigAddr       emitterState = 5
+// )
+//
+// type constantWriterState int
+//
+// const (
+// 	cwStart   constantWriterState = 0
+// 	cwBigAddr constantWriterState = 1
+// 	cwAddr    constantWriterState = 2
+// 	cwData    constantWriterState = 3
+// )
 
-const (
-	swStart         emitterState = 0
-	swEntryPoint    emitterState = 1
-	swAddr          emitterState = 2
-	swData          emitterState = 3
-	swBigEntryPoint emitterState = 4
-	swBigAddr       emitterState = 5
-)
-
-type constantWriterState int
-
-const (
-	cwStart   constantWriterState = 0
-	cwBigAddr constantWriterState = 1
-	cwAddr    constantWriterState = 2
-	cwData    constantWriterState = 3
-)
-
-func newSectionEmitter(s *elf.Section, l *loadableSect, oh ioProto) emitter {
-	if s.Size > 0xffff {
-		log.Fatalf("unable to encode inflating sect (.bss) because size is greater than 0xffff (16 bits): %x", s.Size)
-	}
-	if l.vaddr&0xffff_ffff_0000_000 == 0 && l.vaddr&0xffff != 0 {
-		if l.vaddr&0xf != 0 {
-			log.Fatalf("unable to create base addr for sect %s, %x has neither lower 16 or lower 4 bits clear", l.name, l.vaddr)
-		}
-		if l.vaddr&0xfff00000 != 0 {
-			log.Fatalf("unable to create base addr for sect %s, %x has width > 16bits that will not fit in ESA", l.name, l.vaddr)
-		}
-		l.addressType = anticipation.ExtendedSegmentAddress
-	} else {
-		l.addressType = anticipation.ExtensionBigEntryPoint
-	}
-	return &loadableSectionEmitter{sect: s,
-		loadable:   l,
-		state:      swStart,
-		oh:         oh,
-		buffer:     make([]uint8, anticipation.FileXFerDataLineSize+1),
-		current:    0,
-		resetPoint: resetIncrement, //16 bits in a data line means we need a reset before rollover
-		seeker:     nil,
+func newSectionEmitter(lsl *loadableSectionListener, name string, oh ioProto) emitter {
+	return &loadableSectionEmitter{
+		name:   name,
+		next:   0,
+		oh:     oh,
+		buffer: make([]uint8, anticipation.FileXFerDataLineSize+1),
+		lsl:    lsl,
 	}
 }
 
@@ -89,160 +68,66 @@ func (s *loadableSectionEmitter) receiver() ioProto {
 	return s.oh
 }
 
-func (s *loadableSectionEmitter) name() string {
-	return s.sect.Name
-}
-func (s *loadableSectionEmitter) section() *elf.Section {
-	return s.sect
-}
-func (s *loadableSectionEmitter) currentAddr() uint32 {
-	return s.current
+func (s *loadableSectionEmitter) sectionName() string {
+	return s.name
 }
 
-func (s *loadableSectionEmitter) next() bool {
-	switch s.state {
-	case swStart:
-		if s.loadable.entrypoint != uint64signal {
-			s.state = swBigEntryPoint
-		} else {
-			s.state = swBigAddr
-		}
-		return true
-	case swEntryPoint:
-		s.state = swAddr
-		return true
-	case swBigEntryPoint:
-		s.state = swEntryPoint
-		return true
-	case swBigAddr:
-		s.state = swAddr
-		return true
-	case swAddr:
-		s.state = swData
-		if !s.loadable.inflate {
-			s.seeker = s.sect.Open()
-			//at start s.current==0 but later we may pass a 64K boundary
-			//and in that case it will not be ==0
-			s.seeker.Seek(int64(s.current), io.SeekStart)
-		}
-		return true
-	case swData:
-		s.current += uint32(s.pendingLineLength)
-		if uint64(s.current) == s.sect.Size {
-			return false
-		}
-		return true
+func (s *loadableSectionEmitter) nextAddr() uint64 {
+	return s.next
+}
+
+func (s *loadableSectionEmitter) moreLines() bool {
+	sectionLast := s.lsl.MustSectionLast(s.name)
+	addr, err := s.lsl.SectionAddr(s.name)
+	if err != nil {
+		panic("unable to read section")
 	}
-	panic("unexpected emitter state")
+	if (s.next + addr) > sectionLast {
+		panic(fmt.Sprintf("read too far into the file! should never happen: %d", (s.next+addr+1)-sectionLast))
+	}
+	return s.next+addr != sectionLast
 }
-
-var rollover = ^uint64(0xffff)
 
 //string return value here is of limited value, it's already been transmitted
 func (s *loadableSectionEmitter) line() (string, error) {
-	switch s.state {
-	case swStart:
-		panic("should never request a line in start state")
-	case swBigEntryPoint:
-		top := uint32(s.loadable.entrypoint >> 32)
-		result := anticipation.EncodeBigEntry(top)
-		s.pendingLineLength = uint16(len(result))
-		err := s.oh.BigEntryPoint(result, top)
-		if err != nil {
-			return "", err
-		}
-		return result, nil
-	case swEntryPoint:
-		bottom32 := uint32(s.loadable.entrypoint & 0xffff_ffff)
-		result := anticipation.EncodeSLA(bottom32)
-		s.pendingLineLength = uint16(len(result))
-		err := s.oh.EntryPoint(result, bottom32)
-		if err != nil {
-			return "", err
-		}
-		return result, nil
-	case swBigAddr:
-		top := uint32(s.loadable.vaddr >> 32)
-		result := anticipation.EncodeBigAddr(top)
-		s.pendingLineLength = uint16(len(result))
-		err := s.oh.BigBaseAddr(result, top)
-		if err != nil {
-			return "", err
-		}
-		return result, nil
-	case swAddr:
-		bottom := uint32(s.loadable.vaddr & 0xffff_ffff)
-		if s.loadable.addressType == anticipation.ExtendedSegmentAddress {
-			result := anticipation.EncodeESA(uint16(bottom >> 4))
-			s.pendingLineLength = uint16(len(result))
-			err := s.oh.BaseAddrESA(result, bottom)
-			if err != nil {
-				return "", err
-			}
-			return result, nil
-		} else {
-			//this cloud be EITHER ExtendedLinearAddr or ExtensionBigLinearAddr
-			result := anticipation.EncodeELA(uint16(bottom >> 16))
-			s.pendingLineLength = uint16(len(result))
-			err := s.oh.BaseAddrELA(result, bottom)
-			if err != nil {
-				return "", err
-			}
-			return result, nil
-		}
-	case swData:
-		payloadSize := uint32(0x30)
-		if uint32(s.sect.Size)-s.current < payloadSize {
-			payloadSize = uint32(s.sect.Size) - s.current
-		}
-		trimmed := false
-		currentLowest16ForProtocol := uint16(s.current&0xffff) + uint16(s.sect.Addr&0xffff)
-		lowest16As32 := uint32(currentLowest16ForProtocol)
-		if lowest16As32+payloadSize > 0xffff {
-			diff := (0x10000 - (lowest16As32 + payloadSize))
-			if diff > 0 { //may have already been aligned perfectly
-				//too big, gotta trim
-				payloadSize -= diff //subtract difference, possibly zero
-			}
-			log.Printf("trimmed: %d", diff)
-			trimmed = true
-		}
-		var result string
-		if s.loadable.inflate {
-			result = anticipation.EncodeDataBytes(s.buffer[:payloadSize], currentLowest16ForProtocol)
-		} else {
-			_, err := s.seeker.Seek(int64(s.current), io.SeekStart)
-			if err != nil {
-				return "", err
-			}
-			_, err = s.seeker.Read(s.buffer[:payloadSize])
-			if err != nil {
-				return "", err
-			}
-			result = anticipation.EncodeDataBytes(s.buffer[:payloadSize], currentLowest16ForProtocol)
-		}
-		s.pendingLineLength = uint16(payloadSize)
-		err := s.oh.Data(result, s.buffer[:payloadSize])
-		if err != nil {
-			return "", err
-		}
-		if trimmed { //we succeceded with the last line of this 64k bunch
-			s.loadable.vaddr += 0x10000
-			s.state = swStart //force resend starting next packet
-			//tricky: this means that we will not add pending count on next
-			//packet, so we better do it ourselves
-			s.current += uint32(s.pendingLineLength)
-			s.pendingLineLength = 0 //don't want to do it twice
-		}
+	payloadSize := uint64(0x30)
+	sectionLast := s.lsl.MustSectionLast(s.name)
+	var result string
 
-		return result, nil
+	//clip payload size to not request more than the section has
+	if payloadSize+s.next > sectionLast {
+		payloadSize -= ((payloadSize + s.next) - sectionLast)
 	}
-	panic("unexpected emitter state!")
+	if s.lsl.MustIsInflate(s.name) {
+		for i := 0; i < int(payloadSize); i++ {
+			s.buffer[i] = 0
+		}
+	} else {
+		r, err := s.lsl.ReadAt(s.name, s.buffer[:payloadSize], int64(s.next))
+		if r != int(payloadSize) {
+			//short read from reader, so likely at end of section
+			payloadSize = uint64(r)
+		} else if err != nil {
+			return "bad read", err
+		}
+	}
+	addr, err := s.lsl.SectionAddr(s.name)
+	if err != nil {
+		// log.Fatalf("unable to find section %s when looking for address",s.name)
+	}
+	result = anticipation.EncodeDataBytes(s.buffer[:payloadSize],
+		addr+s.next)
+	err = s.oh.Data(result, s.buffer[:payloadSize])
+	if err != nil {
+		return "bad output", err
+	}
+	s.next += payloadSize
+	return result, nil
 }
 
-// normally, you want to call next() immediately after this
+// normally, you want to call moreLines() immediately after this
 func (s *loadableSectionEmitter) reset() {
-	s.state = swStart
+	s.next = 0
 }
 
 func (s *loadableSectionEmitter) read(buffer []uint8) (string, error) {
@@ -250,95 +135,103 @@ func (s *loadableSectionEmitter) read(buffer []uint8) (string, error) {
 }
 
 //
+// Constant section writer utility implementation
+//
+type constantEmitter struct {
+	io   ioProto
+	done bool
+	addr uint64
+}
+
+func (c *constantEmitter) moreLines() bool {
+	return !c.done
+}
+
+func (c *constantEmitter) reset() {
+	c.done = false
+}
+
+func (c *constantEmitter) read(buffer []uint8) (string, error) {
+	return c.io.Read(buffer)
+}
+func (c *constantEmitter) receiver() ioProto {
+	return c.io
+}
+func (c *constantEmitter) nextAddr() uint64 {
+	return c.addr
+}
+
+//
 // Constant section writer for sending the bootloader params
 //
 type constantParamsEmitter struct {
-	addr              uint64
-	params            *BootloaderParamsDef
-	state             constantWriterState
-	io                ioProto
-	done              bool
-	pendingLineLength uint16
+	*constantEmitter
+	params *BootloaderParamsDef
 }
 
 func newContstantParamsEmitter(addr uint64, params *BootloaderParamsDef, io ioProto) emitter {
-	return &constantParamsEmitter{addr: addr, params: params, io: io, state: cwStart}
+	return &constantParamsEmitter{
+		constantEmitter: &constantEmitter{addr: addr, io: io, done: false},
+		params:          params,
+	}
+}
+func (c *constantParamsEmitter) sectionName() string {
+	return "boot parameters"
 }
 func (c *constantParamsEmitter) line() (string, error) {
-	switch c.state {
-	case cwStart:
-		panic("should never request a line in start state")
-	case cwBigAddr:
-		top := uint32(uintptr(c.addr) >> 32)
-		result := anticipation.EncodeBigAddr(top)
-		c.pendingLineLength = uint16(len(result))
-		err := c.io.BigBaseAddr(result, top)
-		if err != nil {
-			return "", err
-		}
-		return result, nil
-	case cwAddr:
-		bottom := uint32(uintptr(c.addr) & 0xffffffff)
-		result := anticipation.EncodeELA(uint16(bottom >> 16))
-		c.pendingLineLength = uint16(len(result))
-		err := c.io.BaseAddrELA(result, bottom)
-		if err != nil {
-			return "", err
-		}
-		return result, nil
-
-	case cwData:
-		//6 uint64s
-		currentLowest16ForProtocol := uint16(uintptr(c.addr) & 0xffff)
-		payloadSize := uint32(unsafe.Sizeof(BootloaderParamsDef{}))
-		rawData := make([]byte, payloadSize)
-		for i := 0; i < int(payloadSize); i++ {
-			ptr := (*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&bootloaderParamsCopy)) + uintptr(i)))
-			rawData[i] = *ptr
-		}
-		result := anticipation.EncodeDataBytes(rawData, currentLowest16ForProtocol)
-		err := c.io.Data(result, rawData)
-		if err != nil {
-			return "", err
-		}
-		return result, nil
+	if c.done {
+		panic("should never call line() on a params emitter that is done!")
 	}
-	panic("unexpected emitter state!")
-
-}
-func (c *constantParamsEmitter) next() bool {
-	switch c.state {
-	case cwStart:
-		c.state = cwBigAddr
-		return true
-	case cwBigAddr:
-		c.state = cwAddr
-		return true
-	case cwAddr:
-		c.state = cwData
-		return true
-	case cwData:
-		//only one line
-		if c.done {
-			return true
-		}
-		c.done = true
-		return false
+	//6 uint64s
+	payloadSize := uint64(unsafe.Sizeof(BootloaderParamsDef{}))
+	rawData := make([]byte, payloadSize)
+	for i := 0; i < int(payloadSize); i++ {
+		ptr := (*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&bootloaderParamsCopy)) + uintptr(i)))
+		rawData[i] = *ptr
 	}
-	panic("bad state of constantParamsEmitter")
+	result := anticipation.EncodeDataBytes(rawData, c.addr)
+	err := c.io.Data(result, rawData)
+	if err != nil {
+		return "data for params", err
+	}
+	c.done = true
+	return result, nil
 }
-func (c *constantParamsEmitter) reset() {
-	c.done = false
+
+//
+// ENTRY POINT EMITTER
+//
+
+type constantEntryPointEmitter struct {
+	*constantEmitter
 }
-func (c *constantParamsEmitter) name() string {
-	return "bootloader parameters"
+
+func newConstantEntryPointEmitter(addr uint64, io ioProto) emitter {
+	if addr == 0 {
+		panic("no entry point set for constant entry point emitter")
+	}
+	return &constantEntryPointEmitter{
+		constantEmitter: &constantEmitter{addr: addr, io: io, done: false},
+	}
 }
-func (c *constantParamsEmitter) read(buffer []uint8) (string, error) {
-	return c.io.Read(buffer)
+
+func (c *constantEntryPointEmitter) sectionName() string {
+	return "entry point"
 }
-func (c *constantParamsEmitter) receiver() ioProto {
-	return c.io
-}
-func (c *constantParamsEmitter) currentAddr() uint32 {
-	return uint32(uintptr(c.addr) & 0xffffffff)
+func (c *constantEntryPointEmitter) line() (string, error) {
+	if c.done {
+		panic("should never call line() on a params emitter that is done!")
+	}
+
+	if c.addr == 0 {
+		panic("no entry point set for constant entry point emitter")
+	}
+	result := anticipation.EncodeStartLinearAddress(c.addr)
+	err := c.io.Data(result, nil)
+	if err != nil {
+		return "data for params", err
+	}
+
+	c.done = true
+	return result, nil
 }

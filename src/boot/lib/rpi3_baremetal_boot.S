@@ -421,6 +421,9 @@ semihosting_putchar:
 	str x1, [x2]
 	mov x1, x2 //get addr of place we put it
 	hlt 0xf000
+	mov x0, xzr
+    ret
+
 
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++}
 {				IRQ HELPER ROUTINES PROVIDE BY RPi-SmartStart API		    }

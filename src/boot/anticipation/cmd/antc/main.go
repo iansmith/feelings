@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log"
 	"unsafe"
 
 	"device/arm"
@@ -117,7 +116,6 @@ func main() {
 	//until we get a line, and lr.next implies interrupts are off
 	for {
 		s := lr.next(buffer)
-
 		if len(s) == 0 {
 			continue
 		}
@@ -213,10 +211,7 @@ func processLine(line string) (bool, error) {
 		end--
 	}
 	// just do what the line says
-	converted, lt, addr, err := anticipation.DecodeAndCheckStringToBytes(line[:end])
-	if addr == 0x0 && metal.BaseAddress() == 0xfffffc0030000000 && lt == anticipation.DataLine {
-		log.Printf("line is %s", line[:end])
-	}
+	converted, lt, _, err := anticipation.DecodeAndCheckStringToBytes(line[:end])
 	if err != nil {
 		return false, err
 	}

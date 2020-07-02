@@ -2,5 +2,6 @@
   "inherits": [
     "rpi3_qemu"
   ],
-  "linkerscript": "antc_qemu.ld"
+  "linkerscript": "antc_qemu.ld",
+  "gc":"leaking"
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"debug/elf"
 	"errors"
 	"fmt"
 	"log"
@@ -17,17 +16,17 @@ import (
 // only provides the implementation.
 ////////////////////////////////////////////////////////////////////////////////
 type ioProto interface {
-	Data(s string, data []uint8) error              //data is the original data (for cross check)
-	DataInflate(s string, data uint16) error        // data is number of inflated bytes
-	EntryPoint(s string, addr uint32) error         // addr is the lower 32bits of entry point
-	BigEntryPoint(s string, addr uint32) error      // addr is the upper 32bits of entry point
-	BaseAddrESA(s string, addr uint32) error        //  addr is 32bit base addr
-	BigBaseAddr(s string, addr uint32) error        //addr is upper 32 bits of  base addr
-	BaseAddrELA(s string, addr uint32) error        //addr is lower 32 bits of  base addr
-	ExtensionSetParams(s string, p [4]uint64) error //for kernel info
-	Read([]uint8) (string, error)                   //read the next thing from the other side
-	NewSection(*elf.Section) error                  //just a notification
-	EOF() (string, error)                           //just a notification
+	Data(s string, data []uint8) error                               //data is the original data (for cross check)
+	DataInflate(s string, data uint16) error                         // data is number of inflated bytes
+	EntryPoint(s string, addr uint32) error                          // addr is the lower 32bits of entry point
+	BigEntryPoint(s string, addr uint32) error                       // addr is the upper 32bits of entry point
+	BaseAddrESA(s string, addr uint32) error                         //  addr is 32bit base addr
+	BigBaseAddr(s string, addr uint32) error                         //addr is upper 32 bits of  base addr
+	BaseAddrELA(s string, addr uint32) error                         //addr is lower 32 bits of  base addr
+	ExtensionSetParams(s string, p [4]uint64) error                  //for kernel info
+	Read([]uint8) (string, error)                                    //read the moreLines thing from the other side
+	NewSection(listener *loadableSectionListener, name string) error //just a notification
+	EOF() (string, error)                                            //just a notification
 }
 
 ///////////////////////////////////////////////////////////////////////
@@ -51,7 +50,7 @@ func newTTYIOProto(devTTYPath string) *ttyIOProto { //returns null when it can't
 	}
 	return &ttyIOProto{io: ttyObj}
 }
-func (t *ttyIOProto) NewSection(_ *elf.Section) error {
+func (t *ttyIOProto) NewSection(_ *loadableSectionListener, _ string) error {
 	return nil //nothing to do for us
 }
 
@@ -134,8 +133,9 @@ func (t *ttyIOProto) ExtensionSetParams(l string, _ [4]uint64) error {
 // Used in tests (the -t option)
 ///////////////////////////////////////////////////////////////////////
 type verifyIOProto struct {
-	section *elf.Section
 	data    []uint8
+	name    string
+	lsl     *loadableSectionListener
 	current uint64
 }
 
@@ -153,13 +153,14 @@ func (v *verifyIOProto) BigBaseAddr(s string, addr uint32) error {
 	return nil
 }
 
-func (v *verifyIOProto) NewSection(s *elf.Section) error {
-	d, err := s.Data()
+func (v *verifyIOProto) NewSection(lsl *loadableSectionListener, name string) error {
+	d, err := lsl.Data(name)
 	if err != nil {
 		return err
 	}
+	v.name = name
 	v.data = d
-	v.section = s
+	v.lsl = lsl
 	return nil
 }
 
@@ -168,16 +169,22 @@ func (a *verifyIOProto) Data(s string, xcheck []uint8) error {
 	if err != nil {
 		return err
 	}
-	trueAddress := int(a.current+uint64(addr)) - int(a.section.Addr)
+	sectAddr, err := a.lsl.SectionAddr(a.name)
+	if err != nil {
+		log.Fatalf("unable to get address for section %s", a.name)
+	}
+	trueAddress := int(a.current+uint64(addr)) - int(sectAddr)
 
 	dataBlob := decoded[4 : len(decoded)-1]
 	if trueAddress+len(dataBlob) > len(a.data) {
-		return errors.New(fmt.Sprintf("impossible address %08x for sect %s since data is only %08x long",
-			trueAddress+len(dataBlob), a.section.Name, len(a.data)))
+		return errors.New(fmt.Sprintf(
+			"impossible address %08x for sect %s since data is only %08x long",
+			trueAddress+len(dataBlob), a.name, len(a.data)))
 	}
 	for i := 0; i < len(dataBlob); i++ {
 		var reference byte
-		if a.section.Type&elf.SHT_NOBITS > 0 {
+		inflate := a.lsl.MustIsInflate(a.name)
+		if inflate {
 			reference = 0 //bss segment, so it's just zero
 		} else {
 			reference = a.data[trueAddress+i] //from disk
@@ -212,7 +219,7 @@ func (v *verifyIOProto) BaseAddrELA(s string, addr uint32) error {
 func (v *verifyIOProto) ExtensionUnixTime(s string, size uint32) error {
 	return nil
 }
-func (v *verifyIOProto) Read(buffer []byte) (string, error) { //just update to next
+func (v *verifyIOProto) Read(buffer []byte) (string, error) { //just update to moreLines
 	buffer[0] = '.'
 	return string(buffer[0:1]), nil
 

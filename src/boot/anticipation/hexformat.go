@@ -22,20 +22,19 @@ func (d *EncodeDecodeError) Error() string {
 }
 
 //
-// We implement all the hexlinetypes except 3, which is some ancient
-// X86 thing involving memory segments...
+// We used to implement all but one of the Hex line types, but this required so
+// many changes and workarounds we gave up and just made this protocol suitable
+// for a 64bit world.  Trying to shoehorn 64 bit addresses into a protocol that
+// had to be extended to support 32bits was a bridge too far...
 //
 type HexLineType int
 
 const (
-	DataLine                  HexLineType = 0
-	EndOfFile                 HexLineType = 1
-	ExtendedSegmentAddress    HexLineType = 2
-	ExtendedLinearAddress     HexLineType = 4
-	StartLinearAddress        HexLineType = 5
-	ExtensionSetParameters    HexLineType = 0x80
-	ExtensionBigLinearAddress HexLineType = 0x81
-	ExtensionBigEntryPoint    HexLineType = 0x82
+	DataLine               HexLineType = 0
+	EndOfFile              HexLineType = 1
+	StartLinearAddress     HexLineType = 5
+	ExtensionSetParameters HexLineType = 0x80
+	ExtensionSetDeviceTime HexLineType = 0x81
 )
 
 func (hlt HexLineType) String() string {
@@ -44,18 +43,12 @@ func (hlt HexLineType) String() string {
 		return "DataLine"
 	case EndOfFile:
 		return "EndOfFile"
-	case ExtendedSegmentAddress:
-		return "ExtendedSegmentAddress"
-	case ExtendedLinearAddress:
-		return "ExtendedLinearAddress"
 	case StartLinearAddress:
 		return "StartLinearAddress"
 	case ExtensionSetParameters:
 		return "ExtensionSetParametersTime"
-	case ExtensionBigLinearAddress:
-		return "ExtensionBigLinear"
-	case ExtensionBigEntryPoint:
-		return "ExtensionBigEntryPoint"
+	case ExtensionSetDeviceTime:
+		return "ExtensionSetDeviceTime"
 	}
 	return "unknown"
 }
@@ -66,18 +59,12 @@ func hexLineTypeFromInt(i int) HexLineType {
 		return DataLine
 	case 1:
 		return EndOfFile
-	case 2:
-		return ExtendedSegmentAddress
-	case 4:
-		return ExtendedLinearAddress
 	case 5:
 		return StartLinearAddress
 	case 0x80:
 		return ExtensionSetParameters
 	case 0x81:
-		return ExtensionBigLinearAddress
-	case 0x82:
-		return ExtensionBigEntryPoint
+		return ExtensionSetDeviceTime
 	}
 	panic("!unable to understand line type\n")
 }
@@ -85,50 +72,22 @@ func hexLineTypeFromInt(i int) HexLineType {
 ///////////////////////////////////////////////////////////////////////////////////
 // DECODE
 ///////////////////////////////////////////////////////////////////////////////////
-var fart = uint64(0xf)
 
 // deal with a received hex line and return (error?,done?)
 func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 	switch t {
 	case DataLine:
-		l := converted[0]
-		offset := (uint64(converted[1]) * 256) + (uint64(converted[2]))
-		//baseAddr + value in the line => basePtr
-		baseAddr := bb.BaseAddress() + offset
-		var val uint8
-		for i := uint64(0); i < uint64(l); i++ {
-			addr := baseAddr + i
-			val = converted[4+i]
-			if addr&(^fart) == 0xfffffc0030000000 {
-				log.Printf("processing line %x -> %x %+v", addr, val, converted)
-			}
-			if !bb.Write(addr, val) {
+		l := uint64(converted[0]) //number of DATA bytes, not total size
+		addr := decode64bitAddress(converted)
+		for i := uint64(0); i < l; i++ {
+			val := converted[i+10]
+			if !bb.Write(addr+i, val) {
 				return true, false
 			}
 		}
 		return false, false
 	case EndOfFile:
 		return false, true
-	case ExtendedSegmentAddress: //16 bit addr
-		length := converted[0]
-		if length != 2 {
-			print("!ESA value has too many bytes:", length, "\n")
-			return true, false
-		}
-		esaAddr := uint32(converted[4])*256 + uint32(converted[5])
-		esaAddr = esaAddr << 4 //it's assumed to be a multiple of 16
-		bb.SetBaseAddr(esaAddr)
-		return false, false
-	case ExtendedLinearAddress: //32 bit addr but only top 16 passed
-		length := converted[0]
-		if length != 2 {
-			print("!ELA value has too many bytes:", length, "\n")
-			return true, false
-		}
-		elaAddr := uint32(converted[4])*256 + uint32(converted[5])
-		elaAddr = elaAddr << 16 //data supplied is high order 16 of 32
-		bb.SetBaseAddr(elaAddr) //but this sets the lower order 32 of 64
-		return false, false
 	case ExtensionSetParameters: //4 64 bit integers
 		length := converted[0]
 		if length != 32 {
@@ -147,32 +106,18 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 			bb.SetParameter(i, value)
 		}
 		return false, false
-	case ExtensionBigLinearAddress: //32 bit int which is the HIGH order of 64bit addr
+	case StartLinearAddress: //64 bit addr
 		length := converted[0]
-		if length != 4 {
-			print("!extension big linear address has wrong length:", length, "\n")
+		if length != 0 {
+			print("!unexpected length byte on SLA:", length)
 			return true, false
 		}
-		t := uint32(converted[4])*0x1000000 + uint32(converted[5])*0x10000 + uint32(converted[6])*0x100 + uint32(converted[7])
-		bb.SetBigBaseAddr(t)
-		return false, false
-	case ExtensionBigEntryPoint: //32 bit int which is the HIGH order of 64bit pointer
-		length := converted[0]
-		if length != 4 {
-			print("!extension big linear address has wrong length:", length, "\n")
+		if len(converted) != 11 { //size 1, 8 addr, 1 type, 1 checksum
+			print("!SLA value has wrong byte count:", len(converted), "\n")
 			return true, false
 		}
-		t := uint32(converted[4])*0x1000000 + uint32(converted[5])*0x10000 + uint32(converted[6])*0x100 + uint32(converted[7])
-		bb.SetBigEntryPoint(t)
-		return false, false
-	case StartLinearAddress: //32 bit addr
-		length := converted[0]
-		if length != 4 {
-			print("!SLA value has too many bytes:", length, "\n")
-			return true, false
-		}
-		slaAddr := uint32(converted[4])*0x1000000 + uint32(converted[5])*0x10000 + uint32(converted[6])*0x100 + uint32(converted[7])
-		bb.SetEntryPoint(slaAddr)
+		addr := decode64bitAddress(converted)
+		bb.SetEntryPoint(addr)
 		return false, false
 	}
 
@@ -181,19 +126,19 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 }
 
 // take in a string and return either an exception or a well formed value
-func DecodeAndCheckStringToBytes(s string) ([]byte, HexLineType, uint32, error) {
+func DecodeAndCheckStringToBytes(s string) ([]byte, HexLineType, uint64, error) {
 	lenAs16 := uint16(len(s))
 	converted := ConvertBuffer(lenAs16, []byte(s))
 	if converted == nil {
 		return nil, HexLineType(0), 0, errors.New("convert buffer failed")
 	}
-	var addr uint32
+	var addr uint64
 	lt, ok := ExtractLineType(converted)
 	if !ok {
 		return nil, DataLine, 0, NewEncodeDecodeError(fmt.Sprintf("unable to extract line type from: %s", s))
 	}
 	if lt == DataLine {
-		addr = (uint32(converted[1]) * 256) + (uint32(converted[2]))
+		addr = decode64bitAddress(converted)
 	}
 	if ok := ValidBufferLength(lenAs16, converted); ok == false {
 		return nil, lt, addr, NewEncodeDecodeError(fmt.Sprintf("expected buffer length to be ok, but wasn't: %s", s))
@@ -206,7 +151,7 @@ func DecodeAndCheckStringToBytes(s string) ([]byte, HexLineType, uint32, error) 
 
 // received a line, check that it has a hope of being syntactically correct
 func ValidBufferLength(l uint16, converted []byte) bool {
-	total := uint16(11) //size of just framing in characters (colon, 2 len chars, 4 addr chars, 2 type chars, 2 checksum chars)
+	total := uint16(23) //size of just framing in characters (colon, 2 len chars, 16 addr chars, 2 type chars, 2 checksum chars)
 	if uint16(l) < total {
 		print("!bad buffer length, can't be smaller than", total, ":", l, "\n")
 		return false
@@ -237,30 +182,21 @@ func CheckChecksum(l uint16, converted []byte) bool {
 	return true
 }
 
-// extract the line type, 00 (data), 01 (eof), or 02 (esa) and (ok?)
+// extract the line type, 00 (data), 01 (eof), etc
 func ExtractLineType(converted []byte) (HexLineType, bool) {
-	switch converted[3] {
+	switch converted[9] {
 	case 0:
 		return DataLine, true
 	case 1:
 		return EndOfFile, true
-	case 2:
-		return ExtendedSegmentAddress, true
-	case 4:
-		return ExtendedLinearAddress, true
 	case 5:
 		return StartLinearAddress, true
 	case 0x80:
 		return ExtensionSetParameters, true
 	case 0x81:
-		return ExtensionBigLinearAddress, true
-	case 0x82:
-		return ExtensionBigEntryPoint, true
-	case 3:
-		print("!unimplemented line type in hex transmission [StartSegmentAddress] ")
-		return DataLine, false
+		return ExtensionSetDeviceTime, true
 	default:
-		print("!bad buffer type:", converted[3], "\n")
+		print("!bad hex format line type:", converted[3], "\n")
 		return DataLine, false
 	}
 }
@@ -364,17 +300,28 @@ func bufferValue(index uint16, buffer []byte) (uint8, bool) {
 	return total, true
 }
 
+func decode64bitAddress(decoded []byte) uint64 {
+	total := uint64(0)
+	pos := 1                  //where in the sequence
+	for p := 7; p >= 0; p-- { //place value shift required
+		pv := uint64(1 << (p * 8))
+		total += uint64(decoded[pos]) * pv
+		pos++
+	}
+	return total
+}
+
 ///////////////////////////////////////////////////////////////////////////////////
 // ENCODING
 ///////////////////////////////////////////////////////////////////////////////////
 
-func EncodeDataBytes(raw []byte, offset uint16) string {
+func EncodeDataBytes(raw []byte, offset uint64) string {
 	if len(raw) > 255 {
 		log.Fatalf("intel hex format only allows 2 hex characters for the size\n"+
 			"of a data buffer, it can't be more than 0xff bytes (you have %x)", len(raw))
 	}
 	buf := bytes.Buffer{}
-	buf.WriteString(fmt.Sprintf(":%02X%04X%02X", len(raw), offset, int(DataLine)))
+	buf.WriteString(fmt.Sprintf(":%02X%016X%02X", len(raw), offset, int(DataLine)))
 	for _, b := range raw {
 		buf.WriteString(fmt.Sprintf("%02x", b))
 	}
@@ -382,52 +329,11 @@ func EncodeDataBytes(raw []byte, offset uint16) string {
 	buf.WriteString(fmt.Sprintf("%02X", cs))
 	return buf.String()
 }
-
-func EncodeBigEntry(entry uint32) string {
-	buf := bytes.Buffer{}
-	raw := []byte{byte(entry & 0xff000000 >> 24), byte(entry & 0x00ff0000 >> 16),
-		byte(entry & 0x0000ff00 >> 8), byte(entry & 0x000000ff)}
-	buf.WriteString(fmt.Sprintf(":040000%02X%08X", int(ExtensionBigEntryPoint), entry))
-	cs := createChecksum(raw, 0, ExtensionBigEntryPoint)
-	buf.WriteString(fmt.Sprintf("%02X", cs))
-	return buf.String()
-}
-
-func EncodeSLA(addr uint32) string {
-	buf := bytes.Buffer{}
-	raw := []byte{byte(addr & 0xff000000 >> 24), byte(addr & 0x00ff0000 >> 16),
-		byte(addr & 0x0000ff00 >> 8), byte(addr & 0x000000ff)}
-	buf.WriteString(fmt.Sprintf(":040000%02X%08X", int(StartLinearAddress), addr))
-	cs := createChecksum(raw, 0, StartLinearAddress)
-	buf.WriteString(fmt.Sprintf("%02X", cs))
-	return buf.String()
-}
-func EncodeBigAddr(addr uint32) string {
-	buf := bytes.Buffer{}
-	raw := []byte{byte(addr & 0xff000000 >> 24), byte(addr & 0x00ff0000 >> 16),
-		byte(addr & 0x0000ff00 >> 8), byte(addr & 0x000000ff)}
-	buf.WriteString(fmt.Sprintf(":040000%02X%08X", int(ExtensionBigLinearAddress), addr))
-	cs := createChecksum(raw, 0, ExtensionBigLinearAddress)
-	buf.WriteString(fmt.Sprintf("%02X", cs))
-	return buf.String()
-}
-
-// only pass the most significant 16 bits of the 32 bit base
-func EncodeELA(base uint16) string {
-	buf := bytes.Buffer{}
-	buf.WriteString(fmt.Sprintf(":020000%02X%04X", int(ExtendedLinearAddress), base))
-	raw := []byte{byte(base & 0xff00 >> 8), byte(base & 0x00ff)}
-	cs := createChecksum(raw, 0, ExtendedLinearAddress)
-	buf.WriteString(fmt.Sprintf("%02X", cs))
-	return buf.String()
-}
-
-// only pass the top 16 bits of 24 bit base
-func EncodeESA(base uint16) string {
-	buf := bytes.Buffer{}
-	buf.WriteString(fmt.Sprintf(":020000%02X%04X", int(ExtendedSegmentAddress), base))
-	raw := []byte{byte(base & 0xff00 >> 8), byte(base & 0x00ff)}
-	cs := createChecksum(raw, 0, ExtendedSegmentAddress)
+func EncodeStartLinearAddress(offset uint64) string {
+	var buf bytes.Buffer
+	buf.WriteString(fmt.Sprintf(":00%016X%02X", offset,
+		int(StartLinearAddress)))
+	cs := createChecksum(nil, offset, StartLinearAddress)
 	buf.WriteString(fmt.Sprintf("%02X", cs))
 	return buf.String()
 }
@@ -436,7 +342,7 @@ func EncodeESA(base uint16) string {
 func EncodeExtensionSetParameters(v [4]uint64) string {
 	buf := bytes.Buffer{}
 	valueBuffer := bytes.Buffer{} //for checksum ease
-	buf.WriteString(fmt.Sprintf(":200000%02X", int(ExtensionSetParameters)))
+	buf.WriteString(fmt.Sprintf(":200000000000000000%02X", int(ExtensionSetParameters)))
 	for i := 0; i < 4; i++ {
 		value := v[i]
 		for p := 7; p >= 0; p-- {
@@ -450,14 +356,17 @@ func EncodeExtensionSetParameters(v [4]uint64) string {
 	return buf.String()
 }
 
-// tricky: offset only used by the data packet since everything else has 0 offset (not used)
-func createChecksum(raw []byte, offset uint16, hlt HexLineType) uint8 {
-	sum := len(raw)
-	sum += int(offset & 0xff)
-	sum += int(offset>>8) & 0xff
-	sum += int(hlt)
-	for _, v := range raw {
-		sum += int(v)
+func createChecksum(dataBytes []byte, offset uint64, lineType HexLineType) uint8 {
+	sum := uint64(len(dataBytes)) //represents first byte of packet
+	ct := 1
+	for i := 7; i >= 0; i-- { //the address, next 8 bytes
+		v := offset & uint64((0xff)<<(i*8))
+		sum += (v >> (i * 8))
+		ct++
+	}
+	sum += uint64(lineType)
+	for _, v := range dataBytes {
+		sum += uint64(v)
 	}
 	sum = ^sum
 	sum += 1

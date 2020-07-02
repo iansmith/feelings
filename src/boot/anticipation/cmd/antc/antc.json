@@ -2,5 +2,6 @@
   "inherits": [
     "rpi3"
   ],
+  "gc":"leaking",
   "linkerscript":  "antc.ld"
 }

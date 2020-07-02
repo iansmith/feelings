@@ -14,6 +14,7 @@ $(error HOSTGO variable is not set, see enable-feelings.sample)
 endif
 
 EXCEPTIONASM=exception
+KERNELASM=kernel
 FONTDIR=$(FEELINGS)/src/lib/upbeat
 TINYGO_TINYGO=$(TINYGO)/build/tinygo
 TINYGO_LLD=$(LLVM)/bin/ld.lld
@@ -40,9 +41,12 @@ $(FUNCPTRS).S: funcnames.list
 $(EXCEPTIONASM).o: ../../$(EXCEPTIONASM).S
 	$(TINYGO_CLANG) -target $(TARGET) -c -o $(EXCEPTIONASM).o ../../$(EXCEPTIONASM).S
 
-OBJS=font.o $(EXCEPTIONASM).o $(FUNCPTRS).o
+$(KERNELASM).o: ../../$(KERNELASM).S
+	$(TINYGO_CLANG) -target $(TARGET) -c -o $(KERNELASM).o ../../$(KERNELASM).S
 
-$(NAME): *.go $(EXCEPTIONASM).o font.o $(FUNCPTRS).o
+OBJS=font.o $(EXCEPTIONASM).o $(FUNCPTRS).o $(KERNELASM).o
+
+$(NAME): *.go $(EXCEPTIONASM).o font.o $(FUNCPTRS).o $(KERNELASM).o
 	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -opt 1 -ldflags='$(OBJS)' -target $(NAME)_qemu.json -o $(NAME) .
 
 $(NAME).hardware: *.go $(EXCEPTIONASM).o font.o $(FUNCPTRS).o
