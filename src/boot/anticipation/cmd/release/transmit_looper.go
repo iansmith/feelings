@@ -67,11 +67,11 @@ func (t *transmitLooper) next() bool {
 	}
 	if t.state == tsParams {
 		t.state = tsEnd
-		return true
+		return false
 	}
 	if t.emitterIndex == len(t.emitters) { //sections done?
 		t.state = tsParams
-		return false
+		return true
 	}
 	t.current = t.emitters[t.emitterIndex]
 	t.current.moreLines()
@@ -101,6 +101,7 @@ func (t *transmitLooper) line() (string, error) {
 		return t.current.line()
 	case tsParams:
 		l := anticipation.EncodeExtensionSetParameters(t.param)
+		log.Printf("line we sent about params: %s", l)
 		return l, t.in.ExtensionSetParams(l, t.param)
 	}
 	panic("unexpected state for transmitLooper")

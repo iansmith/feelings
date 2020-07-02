@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"unsafe"
 
 	"boot/anticipation"
@@ -189,7 +190,9 @@ func (c *constantParamsEmitter) line() (string, error) {
 		ptr := (*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&bootloaderParamsCopy)) + uintptr(i)))
 		rawData[i] = *ptr
 	}
+	log.Printf("params: %+v", bootloaderParamsCopy)
 	result := anticipation.EncodeDataBytes(rawData, c.addr)
+	log.Printf("line to device for param VALUES %s", result)
 	err := c.io.Data(result, rawData)
 	if err != nil {
 		return "data for params", err

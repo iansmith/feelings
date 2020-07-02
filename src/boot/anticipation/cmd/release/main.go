@@ -70,6 +70,7 @@ func main() {
 	if !hasBootloaderSym {
 		log.Fatalf("unable to find %s in the elf file", KeySymbols[0])
 	}
+	log.Printf("setting bootloader params location to %x", v)
 	bootloaderParamsLocation = v
 
 	//
@@ -167,6 +168,7 @@ func protocol(filename string, lsl *loadableSectionListener, oh ioProto) {
 		panic("no entry point set")
 	}
 	emitterList[lsl.NumSections()] = newConstantEntryPointEmitter(ep, oh)
+	bootloaderParamsCopy.EntryPoint = ep
 
 	//next emmitter does the boot parameter copying magic
 	emitterList[lsl.NumSections()+1] = newContstantParamsEmitter(bootloaderParamsLocation,
@@ -303,7 +305,6 @@ func sendLineToDevice(tx *transmitLooper) {
 	// we get the line as a courtesy, but it's already been sent
 	l, err := tx.line()
 	if err != nil {
-		panic("here")
 		log.Fatalf("error reading moreLines line from encoder: %v", err)
 	}
 	if *verbose == 2 {

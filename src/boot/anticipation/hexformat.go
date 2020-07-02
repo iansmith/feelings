@@ -98,11 +98,12 @@ func ProcessLine(t HexLineType, converted []byte, bb byteBuster) (bool, bool) {
 			value := uint64(0)
 			for p := 7; p >= 0; p-- {
 				placeValue := uint64(1 << (8 * p))
-				//4 is because of four constant valuesat left of converted[]
+				//10 is because of constant valuesat left of converted[]
 				//i*8 is which param
 				//7-p is byte
-				value += (placeValue * uint64(converted[(4)+(i*8)+(7-p)]))
+				value += (placeValue * uint64(converted[(10)+(i*8)+(7-p)]))
 			}
+			print("set parameter ", i, " ", value, "\n")
 			bb.SetParameter(i, value)
 		}
 		return false, false

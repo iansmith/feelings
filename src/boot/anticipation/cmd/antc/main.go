@@ -231,6 +231,7 @@ func processLine(line string) (bool, error) {
 		//turn off the interrupts so we don't get them in kernel until we are ready
 		machine.IC.Disable1.SetAux() //sadly, you *set* things in the DISable reg to turn off
 		machine.QA7.LocalTimerControl.ClearTimerEnable()
+		print("boot param 0: ", metal.GetParameter(0), "\n")
 		jumpToKernel(metal.EntryPoint(), metal.GetParameter(0), metal.GetParameter(1),
 			metal.GetParameter(2), metal.GetParameter(3))
 	}
