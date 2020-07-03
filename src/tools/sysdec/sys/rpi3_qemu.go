@@ -59,6 +59,8 @@ var RPI3Qemu5 = sysdec.DeviceDef{
 		"QA7":         QA7,
 		"GPUMailbox":  GPUMailbox,
 		"SystemTimer": SystemTimerQEMU,
+		"EMMC":        EMMC,
+		"GPIO":        GPIO,
 	},
 	NumCores: 4,
 	MMIOBindings: map[string]int{
@@ -67,5 +69,7 @@ var RPI3Qemu5 = sysdec.DeviceDef{
 		"SystemTimer": 0x3f00_0000,
 		"QA7":         0x4000_0000,
 		"GPUMailbox":  0x3f00_0000,
+		"EMMC":        0x3f00_0000,
+		"GPIO":        0x3f00_0000,
 	},
 }

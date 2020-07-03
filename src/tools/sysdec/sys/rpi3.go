@@ -54,6 +54,7 @@ var RPI3 = sysdec.DeviceDef{
 		"GPUMailbox":  GPUMailbox,
 		"GPIO":        GPIO,
 		"SystemTimer": SystemTimer,
+		"EMMC":        EMMC,
 	},
 	NumCores: 4,
 	MMIOBindings: map[string]int{
@@ -63,5 +64,6 @@ var RPI3 = sysdec.DeviceDef{
 		"QA7":         0x4000_0000,
 		"GPUMailbox":  0x3f00_0000,
 		"GPIO":        0x3f00_0000,
+		"EMMC":        0x3f00_0000,
 	},
 }

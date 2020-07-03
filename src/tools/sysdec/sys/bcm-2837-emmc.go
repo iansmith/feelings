@@ -2,7 +2,7 @@ package sys
 
 import "tools/sysdec"
 
-var EMCC = &sysdec.PeripheralDef{
+var EMMC = &sysdec.PeripheralDef{
 	Version: 1,
 	Description: `The External Mass Media Controller (EMMC) is an embedded 
 MultiMedia and SD card interface provided by Arasan. It is compliant to the 
@@ -34,7 +34,7 @@ the maximum delay.
 
 The EMMC module handles the handshaking process on the command and data 
 lines and all CRC processing automatically.`,
-	AddressBlock: sysdec.AddressBlockDef{BaseAddress: 0x30_0000, Size: 0x68},
+	AddressBlock: sysdec.AddressBlockDef{BaseAddress: 0x30_0000, Size: 0xfc},
 	Register: map[string]*sysdec.RegisterDef{
 		"Arg2": {
 			Description: `This register contains the argument for the SD card 
@@ -44,7 +44,7 @@ ACMD23 command is issued using the CMDTM register.`,
 			Size:          32,
 			Access:        sysdec.Access("rw"),
 		},
-		"BlockeSizAndCount": {
+		"BlockSizeAndCount": {
 			Description: `This register must not be accessed or modified while 
 any data transfer between card and host is ongoing.
 
@@ -234,7 +234,7 @@ For paced DMA transfers the high active signal dma_req can be used.`,
 			Size:          32,
 			Access:        sysdec.Access("rw"),
 		},
-		"Status": {
+		"DebugStatus": {
 			Description: `This register contains information intended for 
 debugging. Its values change automatically according to the hardware. As it 
 involves resynchronisation between different clock domains it changes only 
