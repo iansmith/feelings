@@ -30,10 +30,10 @@ $(BOOTASM).o: $(BOOTLIB)/$(BOOTASM).S
 
 
 $(NAME): *.go $(BOOTASM).o
-	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build  -ldflags='$(BOOTASM).o' -target rpi3_qemu -o $(NAME) .
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -opt 1 -ldflags='$(BOOTASM).o' -target rpi3_qemu -o $(NAME) .
 
 $(NAME).hardware: *.go $(BOOTASM).o
-	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build  -ldflags='$(BOOTASM).o' -target rpi3 -o $(NAME).hardware .
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -opt 1 -ldflags='$(BOOTASM).o' -target rpi3 -o $(NAME).hardware .
 
 clean:
 	rm $(NAME) $(NAME).hardware kernel8.img *.o >/dev/null 2>/dev/null || true
@@ -45,14 +45,15 @@ run:
 	$(TOOLS)/bin/qemu-system-aarch64 -M raspi3 -kernel sdcard \
 	-serial null -serial stdio \
 	-chardev pty,id=char1 \
-	-drive file=$(IMAGEFILE),if=sd,format=raw,file.locking=off
+	 --trace events=/tmp/events \
+	-drive file=$(IMAGEFILE),if=sd,format=raw
 
 #-drive file=/Users/iansmith/outfile.bin,if=sd,format=raw,drive=sd0
 
 debug:
-	qemu-system-aarch64  \
+	$(TOOLS)/bin/qemu-system-aarch64  \
 		-M raspi3 -S -s \
-		-kernel kernel8.img \
+		-kernel sdcard \
 		-semihosting -semihosting-config enable=on,target=native \
 		-drive file=$(IMAGEFILE),if=sd,format=raw \
 		-serial null -serial stdio

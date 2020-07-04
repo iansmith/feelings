@@ -7,6 +7,7 @@ import (
 
 	"device/arm"
 	"machine"
+	"runtime/volatile"
 
 	"boot/anticipation"
 	"lib/trust"
@@ -59,6 +60,9 @@ func wait() {
 //go:extern anticipation_addr
 var anticipation_addr uint64
 
+//go:extern
+func wait10000()
+
 func main() {
 
 	buffer = make([]uint8, anticipation.FileXFerDataLineSize)
@@ -69,8 +73,9 @@ func main() {
 	if info == nil {
 		panic("giving up, can't set framebuffer res")
 	}
-
 	logger = upbeat.NewConsoleLogger(info)
+
+	//log.Printf("clock time %d", runtime.Semihostingv2UnixTime())
 	// we ignore errors because we are running on baremetal and there is literally
 	// nothing we can do ... the error was in the part that lets us do "print"
 	logger.Debugf("#\n")
@@ -384,4 +389,56 @@ func makePhysicalBlockEntry(destination uintptr, mairIndex uint64) uint64 {
 	//note: at level3, there is this special encoding and we are at level 3
 	//https://armv8-ref.codingbelief.com/en/chapter_d4/d43_2_armv8_translation_table_level_3_descriptor_formats.html
 	return result
+}
+
+var sleepOneTickAmount uint32
+
+func clockCalibration(logger *trust.Logger) uint32 {
+	n := uint64(1000)
+	numIters := 10
+	var z volatile.Register32
+	sets := uint32(455000)
+	logger.Debugf("Calibrating clock...")
+outer:
+	for iter := 0; iter < numIters; iter++ {
+		sum := uint64(0)
+		prev := machine.SystemTime()
+		for i := uint64(0); i < n; i++ {
+			for j := uint32(0); j < sets; j++ {
+				z.Set(z.Get() + j)
+			}
+			x := machine.SystemTime()
+			diff := x - prev
+			sum += diff
+			// log.Printf("xxx %d: %d, %d", i, x, x-prev)
+			prev = x
+		}
+		avg := float64(sum) / float64(n)
+		if avg < 1.005 && avg > .995 {
+			break outer
+		}
+		if iter != numIters-1 {
+			logger.Debugf("iteration: %d, %d,%4.2f", iter+1, z.Get(), avg)
+		}
+		if avg < 1.0 {
+			adjustment := 1.0 / avg
+			logger.Debugf("adjust up by %0.2f", (adjustment - 1.0))
+			setsAsFloat := float64(sets) * adjustment
+			sets = uint32(setsAsFloat)
+		} else {
+			adjustment := avg - 1.0
+			logger.Debugf("adjust down by %0.2f", adjustment)
+			change := float64(sets) * adjustment
+			sets -= uint32(change)
+		}
+	}
+	logger.Debugf("clock calibration: %d", sets)
+	return sets
+}
+
+func sleepOneTick() {
+	var z volatile.Register32
+	for j := uint32(0); j < sleepOneTickAmount; j++ {
+		z.Set(z.Get() + j)
+	}
 }

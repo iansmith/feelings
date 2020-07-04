@@ -100,7 +100,7 @@ BLKSIZECNT register has been transferred.
 The TM_AUTO_CMD_EN bits can be used to make the host to send automatically 
 a command to the card telling it that the data transfer has finished once 
 the BLKCNT bits in the BLKSIZECNT register are 0.`,
-			AddressOffset: 0xC, // yes, skipped one
+			AddressOffset: 0xC,
 			Size:          32,
 			Access:        sysdec.Access("rw"),
 			Field: map[string]*sysdec.FieldDef{

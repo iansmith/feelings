@@ -36,3 +36,10 @@ jump_to_kernel:
 	mov x0,x1   // pass a pointer to the boot parms
 	br x19
 
+.global "boot/anticipation/cmd/antc.wait10000"
+"boot/anticipation/cmd/antc.wait10000":
+	mov x0,#10000
+iter:
+	sub x0,x0,#1
+	cbnz x0, iter
+	ret

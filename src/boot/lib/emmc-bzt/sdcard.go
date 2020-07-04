@@ -125,10 +125,16 @@ func sdWaitForInterrupt(mask uint32) int {
 	var r uint32
 	var m = mask | InterruptErrorMask
 	cnt := 1000000
+	if m == mask {
+		panic("m is same as mask, cant be possible")
+	}
 
 	trust.Debugf("xxx sdWaitForIntr m=%x, value=%x", m, machine.EMMC.Interrupt.Get())
 	WaitMuSecDumb(1)
 	for (machine.EMMC.Interrupt.Get()&m == 0) && cnt > 0 {
+		if machine.EMMC.Interrupt.Get() != 0 {
+			panic("got something from interrupt")
+		}
 		WaitMuSecDumb(1)
 		if cnt%10000 == 0 {
 			trust.Debugf("ct is %d", cnt)
@@ -199,11 +205,12 @@ func sdSendCommand(code uint32, arg uint32) int {
 			code, arg)
 	}
 
-	machine.EMMC.Interrupt.Set(machine.EMMC.Interrupt.Get()) //???
+	/* Clear interrupt flags.  This is done by setting the ones that are currently set */
+	machine.EMMC.Interrupt.Set(machine.EMMC.Interrupt.Get())
 	machine.EMMC.Argument.Set(arg)
 	machine.EMMC.CommandTransferMode.Set(code)
 
-	trust.Debugf("sdSendCommand3: %d", code)
+	trust.Debugf("sdSendCommand3: 0x%x", code)
 	if code == CommandSendOpCond {
 		WaitMuSecDumb(1000) //up to one milli?
 	} else if code == CommandSendIfCond || code == CommandAppCommand {
@@ -247,21 +254,21 @@ func sdSendCommand(code uint32, arg uint32) int {
 
 // It's not at all clear what these are needed for
 func GPIOPinsInit() int {
-	var r int
-	r = int(machine.GPIO.FSel[4].Get())
+	var r uint32
+	r = machine.GPIO.FSel[4].Get()
 
-	comp := ^(7 << (7 * 3))
+	comp := ^(uint32(7 << (7 * 3)))
 	r = r & comp //clearing the pin seven entries?
 	machine.GPIO.FSel[4].Set(uint32(r))
 	waitOnPullUps(1 << 15)
 
 	// GPIO_CLK
-	r = int(machine.GPIO.FSel[4].Get())
+	r = machine.GPIO.FSel[4].Get()
 	r = r | ((7 << (8 * 3)) | (7 << (9 * 3)))
 	machine.GPIO.FSel[4].Set(uint32(r))
 	waitOnPullUps((1 << 16) | (1 << 17))
 
-	r = int(machine.GPIO.FSel[5].Get())
+	r = machine.GPIO.FSel[5].Get()
 	r = r | ((7 << (0 * 3)) | (7 << (1 * 3)) | (7 << (2 * 3)) | (7 << (3 * 3)))
 	machine.GPIO.FSel[5].Set(uint32(r))
 	waitOnPullUps((1 << 18) | (1 << 19) | (1 << 20) | (1 << 21))
@@ -271,9 +278,9 @@ func GPIOPinsInit() int {
 func sdInit() int {
 	var r, ccs, cnt int
 
-	if err := GPIOPinsInit(); err != EMMCOk {
-		return err
-	}
+	//if err := GPIOPinsInit(); err != EMMCOk {
+	//	return err
+	//}
 
 	sdHardwareVersion := (machine.EMMC.SlotISRVersion.SDVersion())
 	//SlotInterruptStatus.Get() & bcm2835.HostSpecNum) >> bcm2835.HostSpecNumShift
@@ -281,7 +288,8 @@ func sdInit() int {
 
 	// Reset the card.
 	machine.EMMC.Control0.Set(0)
-
+	machine.EMMC.Control1.Set(0)
+	//send the reset actual bits
 	machine.EMMC.Control1.SetResetHostCircuit()
 	cnt = 10000
 	for machine.EMMC.Control1.ResetHostCircuitIsSet() && cnt > 0 {
@@ -305,7 +313,7 @@ func sdInit() int {
 	}
 	trust.Debugf("enabling interrupts, but masking them")
 	machine.EMMC.EnableInterrupt.Set(0xffffffff) //turn them all on, then...
-	machine.EMMC.InterruptMask.Set(0xffffffff)   //huh? why?
+	machine.EMMC.InterruptMask.Set(0xffffffff)   //I think this clears them all
 	sdScr[0] = 0
 	sdScr[1] = 0
 	sdRca = 0
