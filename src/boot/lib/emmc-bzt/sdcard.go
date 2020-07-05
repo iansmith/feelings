@@ -172,6 +172,9 @@ func sdStatus(mask uint32) int {
 	}
 	return EMMCOk
 }
+func SDSendCommand(code uint32, arg uint32) int {
+	sdSendCommand(code, arg)
+}
 
 func sdSendCommand(code uint32, arg uint32) int {
 	r := 0
@@ -282,9 +285,9 @@ func sdInit() int {
 	//	return err
 	//}
 
-	sdHardwareVersion := (machine.EMMC.SlotISRVersion.SDVersion())
+	//sdHardwareVersion := (machine.EMMC.SlotISRVersion.SDVersion())
 	//SlotInterruptStatus.Get() & bcm2835.HostSpecNum) >> bcm2835.HostSpecNumShift
-	trust.Infof("EMMC: GPIO (?) set up (version %d)\n", sdHardwareVersion)
+	//trust.Infof("EMMC: GPIO (?) set up (version %d)\n", sdHardwareVersion)
 
 	// Reset the card.
 	machine.EMMC.Control0.Set(0)
@@ -306,6 +309,9 @@ func sdInit() int {
 	machine.EMMC.Control1.SetEnableClock()
 	machine.EMMC.Control1.SetDataTimeoutUnitExponent(0b1110) //max
 	WaitMuSecDumb(10)
+
+	sdHardwareVersion := (machine.EMMC.SlotISRVersion.SDVersion())
+
 	// Set clock to setup frequency.
 	err := sdSetClockToFreq(400000, sdHardwareVersion)
 	if err != EMMCOk {
