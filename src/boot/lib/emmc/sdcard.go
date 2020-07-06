@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 
 	"machine"
@@ -38,29 +39,65 @@ func sdReadblock(lba uint32, num uint32) (int, []byte) {
 //reads num sectors starting at lba into a buffer
 //provided
 func sdReadblockInto(lba uint32, num uint32, buf unsafe.Pointer) int {
+	machine.EMMC.BlockSizeAndCount.SetBlkCnt(num)
 	if num < 1 {
 		trust.Errorf("sdreadblock: requested bad number of blocks (%d), using 1 instead",
 			num)
 		num = 1
 	}
+
+	trust.Debugf("-- testing data inhibit or error ---")
+
+	if machine.EMMC.DebugStatus.Get()&Datinhibit != 0 {
+		trust.Debugf("waiting on data inhibit... @TICKS=%d", machine.SystemTime())
+		ok := false
+		for j := 0; j < 30; j++ {
+			if machine.EMMC.DebugStatus.Get()&Datinhibit == 0 {
+				ok = true
+				break
+			}
+			if !machine.EMMC.Interrupt.ErrorIsSet() {
+				ok = true
+				break
+			}
+			delay(1)
+		}
+		if !ok {
+			trust.Errorf("timed out waiting on data inhibit %v "+
+				"or error (%v): @TICKS=%d",
+				machine.EMMC.DebugStatus.Get()&Datinhibit != 0,
+				machine.EMMC.Interrupt.ErrorIsSet(),
+				machine.SystemTime())
+			machine.Abort()
+		}
+	}
+
 	var resp [4]uint32
-	trust.Debugf("start reading %d blocks, first block @%d: ", num, lba)
-	machine.EMMC.BlockSizeAndCount.SetBlkCnt(num)
-	machine.EMMC.BlockSizeAndCount.SetBlkSize(sectorSize)
+	trust.Debugf("--- start reading %d blocks, first block @%d ---", num, lba)
 	if num == 1 {
 		if emmccmd(ReadSingle, lba, &resp) != 0 {
 			trust.Errorf("aborting read block into for block %d", lba)
 			return sdError
 		}
-		return sdOk
 	} else {
 		if emmccmd(ReadMulti, lba, &resp) != 0 {
 			trust.Errorf("aborting read multi block into for block %d", lba)
 			return sdError
 		}
 	}
-	syncdata(false)
+	ct := 0
+	trust.Debugf("-- testing data read is ready ---")
+	for !machine.EMMC.Interrupt.ReadReadyIsSet() && ct < 10 {
+		delay(1)
+		ct++
+	}
+	if !machine.EMMC.Interrupt.ReadReadyIsSet() {
+		trust.Errorf("did not receive interrupt signal that data read is ready")
+		return sdError
+	}
 	c := uint32(0)
+	trust.Debugf("-- read! ---")
+
 	for c < num {
 		ptr := unsafe.Pointer(uintptr(buf) + uintptr(c*sectorSize))
 		if err := syncio(false, ptr, sectorSize); err != sdOk {
@@ -106,8 +143,15 @@ func syncio(write bool, buf unsafe.Pointer, bufSize uint32) int {
 
 	if !write {
 		for d := uint32(0); d < bufSize/4; d++ {
+			if d%8 == 0 {
+				fmt.Printf("%04d:", d*4)
+			}
 			buffer := (*uint32)(unsafe.Pointer(uintptr(buf) + uintptr(d*4)))
 			*buffer = machine.EMMC.Data.Get()
+			fmt.Printf("%08x ", *buffer)
+			if d%8 == 7 {
+				fmt.Printf("\n")
+			}
 		}
 	} else {
 		panic("not implemented yet")

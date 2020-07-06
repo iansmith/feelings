@@ -111,7 +111,7 @@ func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in set
 			return nil
 		}
 		if mbr.Signature != 0xaa55 {
-			trust.Errorf("bad magic number in MBR")
+			trust.Errorf("bad magic number in MBR (%x)", mbr.Signature)
 			return nil
 		}
 		if err := unpackPartitionBuffer(buffer, mbrUnusedSize, 0, sizeOfPackedPartitionInfo, &mbr.Partition1); err != nil {

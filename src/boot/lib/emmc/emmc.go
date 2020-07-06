@@ -50,8 +50,15 @@ const IORWdirect = 52    /* sdio read/write direct command */
 const IORWextended = 53  /* sdio read/write extended command */
 const Appcmd = 55        /* mmc/sd application command prefix */
 
-const ReadSingle = 14
-const ReadMulti = 15
+const ReadSingle = 17
+const ReadMulti = 18
+const SelectCard = 7
+const SendIfCond = 8
+const OpCond = 41
+const SendAllCID = 2
+const SendRelativeAddr = 3
+const SendCSD = 9
+const SetBlockLen = 16
 
 const Arg2 = 0x00 >> 2
 const Blksizecnt = 0x04 >> 2
@@ -278,6 +285,7 @@ func emmcgoidle() {
 	machine.EMMC.CommandTransferMode.Set(0)
 	for {
 		if machine.EMMC.Interrupt.CommandDoneIsSet() {
+			machine.EMMC.Interrupt.Set(machine.EMMC.Interrupt.Get() | Cmddone)
 			break
 		}
 		if machine.EMMC.Interrupt.Get() != 0 {
@@ -286,6 +294,7 @@ func emmcgoidle() {
 		}
 		delay(1)
 	}
+
 }
 
 var zero = uint32(0)
@@ -334,6 +343,7 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 	}
 	c := (cmd << Indexshift) | uint32(info)
 	//c now has all the deets
+	trust.Debugf("command after shift: %x", c)
 
 	//CMD6 may be Setbuswidth or Switchfunc depending on Appcmd prefix
 	if cmd == Switchfunc && !emmc.appcmd {
@@ -364,7 +374,7 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 		}
 	}
 	//data inhibit
-	if ((c & Isdata) != 0) || ((c & Respmask) == Resp48busy) {
+	if (machine.EMMC.DebugStatus.Get()&Datinhibit != 0) && (((c & Isdata) != 0) || ((c & Respmask) == Resp48busy)) {
 		trust.Infof("emmccmd: need to reset Datinhibit intr %x stat %x\n",
 			machine.EMMC.Interrupt.Get(), machine.EMMC.DebugStatus.Get())
 		machine.EMMC.Control1.SetResetData()
@@ -375,17 +385,18 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 			delay(1)
 		}
 	}
-	//write arg and command
+
 	machine.EMMC.Argument.Set(arg)
-	i := machine.EMMC.Interrupt.Get()
+	i := machine.EMMC.Interrupt.Get() & 0xffffff //top byte is not used but has crap in it
 	if i&everythingButCardIntr != 0 {
 		if i != Cardinsert {
-			trust.Infof("emmc: before command, intr was %x\n", i)
+			trust.Infof("emmc: before command, intr was %x, clearning prior interrupt\n", i)
 		}
 		machine.EMMC.Interrupt.Set(i)
 	}
 	machine.EMMC.CommandTransferMode.Set(c)
 	now := machine.SystemTime()
+	trust.Debugf("setting command %x with arg %x (ticks=%d)", c, arg, now)
 	//wait to see if we get a cmddone or err
 	for {
 		i = machine.EMMC.Interrupt.Get()
@@ -397,6 +408,8 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 		}
 		trust.Debugf("waiting on cmd: %d", machine.SystemTime()-now)
 	}
+	trust.Debugf("waited for interrupt response to command: done=%x (err=%x)", i&commandDoneOrError, i&Err)
+
 	//are we done?
 	if i&commandDoneOrError != Cmddone {
 		if i&everythingButCommandDoneOrError != Ctoerr {
@@ -416,8 +429,10 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 		trust.Errorf("response required, but no response buffer provided!")
 		return EBadArg
 	}
+	trust.Debugf("CMD Ok! (%d)", i&commandDoneOrError)
+
 	//clear anything that is NOT data related
-	machine.EMMC.Interrupt.Set(i & everythingButCommandDoneOrError)
+	machine.EMMC.Interrupt.Set(i & everythingButDataReadOrWriteReady)
 	//which type of resp?
 	switch c & Respmask {
 	case Resp136:
@@ -451,10 +466,12 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 		i := machine.EMMC.Interrupt.Get()
 		if i&Datadone == 0 {
 			trust.Errorf("emmcio: no datadone after CMD %d", cmd)
+			return sdError
 		}
 		if i&Err != 0 {
 			trust.Errorf("emmcio: command %d error interrupt %x", cmd,
-				machine.EMMC.Interrupt.Get())
+				machine.EMMC.Interrupt.Get()&0xffffff)
+			return sdError
 		}
 		//clear interrupts
 		machine.EMMC.Interrupt.Set(i)
@@ -503,12 +520,13 @@ func emmciosetup(buf unsafe.Pointer, bsize uint32, bcount uint32) {
 
 // predicate to wait on
 func dataDone() bool {
+	trust.Debugf("xxxx data done xxxx %x", machine.EMMC.Interrupt.Get()&dataDoneOrError)
 	return machine.EMMC.Interrupt.Get()&dataDoneOrError != 0
 }
 
 //xxx fix me
 func mmcinterruptReceived() {
-	i := machine.EMMC.Interrupt.Get()
+	i := machine.EMMC.Interrupt.Get() & 0xffffff //top byte is not used but has crap in it
 	if i&dataDoneOrError != 0 {
 		arm.Asm("nop")
 		// wakeup r (rendez r)
