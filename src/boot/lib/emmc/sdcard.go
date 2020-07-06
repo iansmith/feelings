@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"unsafe"
 
@@ -20,20 +19,23 @@ type sdCardInfo struct {
 	activePartition *fatPartition
 }
 
-func (s *sdCardInfo) readInto(sector uint32, data unsafe.Pointer) error {
+func (s *sdCardInfo) readInto(sector uint32, data unsafe.Pointer) int {
 	result := sdReadblockInto(sector, 1, data)
-	if result == 0 {
-		errors.New("should be a read error type")
+	if result != sdOk {
+		return result
 	}
-	return nil
+	return sdOk
 }
 
 //reads into a buffer created on the heap
-func sdReadblock(lba uint32, num uint32) (int, []byte) {
+func sdReadblock(lba uint32, num uint32) (uint32, []byte) {
 	buffer := make([]byte, sectorSize*num)
 	buf := unsafe.Pointer(&buffer[0])
-	read := sdReadblockInto(lba, num, buf)
-	return read, buffer
+	err := sdReadblockInto(lba, num, buf)
+	if err != sdOk {
+		return 0, nil
+	}
+	return sectorSize * num, buffer
 }
 
 //reads num sectors starting at lba into a buffer
@@ -101,6 +103,8 @@ func sdReadblockInto(lba uint32, num uint32, buf unsafe.Pointer) int {
 	for c < num {
 		ptr := unsafe.Pointer(uintptr(buf) + uintptr(c*sectorSize))
 		if err := syncio(false, ptr, sectorSize); err != sdOk {
+			trust.Debugf("error reading in syncio: %d,%v",
+				err, err != sdOk)
 			return err
 		}
 		c++ //yech
@@ -153,8 +157,9 @@ func syncio(write bool, buf unsafe.Pointer, bufSize uint32) int {
 				fmt.Printf("\n")
 			}
 		}
+		trust.Debugf("read %d bytes", bufSize)
 	} else {
 		panic("not implemented yet")
 	}
-	return 0
+	return sdOk
 }

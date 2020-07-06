@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"lib/trust"
 	"math/rand"
 
@@ -70,8 +71,8 @@ type Tranquil struct {
 	cacheOusters uint64
 }
 
-type loader func(uint32, unsafe.Pointer /*watch alignment!*/) error
-type saver func(uint32, unsafe.Pointer /*watch alignment!*/) error
+type loader func(uint32, unsafe.Pointer /*watch alignment!*/) int
+type saver func(uint32, unsafe.Pointer /*watch alignment!*/) int
 
 // pass in a contiguous buffer, must be a multiple of 512 bytes and the number of pages
 // 1page=512bytes is the 2nd param
@@ -153,9 +154,9 @@ func (t *Tranquil) PossiblyLoad(sector uint32) (unsafe.Pointer, error) {
 	ptr := unsafe.Pointer(uintptr(t.data) + uintptr(winner*pageUnit))
 	//store the mapping
 	t.pageMap[sector] = bufferEntry{ptr, winner}
-	if err := t.loader(sector, ptr); err != nil {
+	if err := t.loader(sector, ptr); err != sdOk {
 		trust.Errorf("buffer management failed to load page: %x", sector)
-		return nil, err
+		return nil, errors.New("read failed")
 	}
 	return ptr, nil
 }

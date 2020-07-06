@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"lib/trust"
+	"log"
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
@@ -126,6 +127,9 @@ func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in set
 		if err := unpackPartitionBuffer(buffer, mbrUnusedSize, sizeOfPackedPartitionInfo*3, 4*sizeOfPackedPartitionInfo, &mbr.Partition4); err != nil {
 			return nil
 		}
+		log.Printf("read MBR: %+v", mbr)
+		log.Printf("active partiton: %+v", mbr.Partition1)
+		log.Printf("dead partiton: %+v", mbr.Partition2)
 		sdCard.activePartition.unusedSectors = mbr.Partition1.FirstSector // FAT16 needs this value so hold it
 		//try again for BPB at firstDataSector
 		read, buffer = sdReadblock(mbr.Partition1.FirstSector, 1)
