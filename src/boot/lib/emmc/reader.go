@@ -13,8 +13,8 @@ import (
 // 3.each byte of each sector
 type fatDataReader struct {
 	tranquil      bufferManager
-	cluster       uint32
-	sector        uint32
+	cluster       clusterNumber
+	sector        sectorNumber
 	sectorData    unsafe.Pointer // sectorSize
 	current       uint32         // [0, sectorSize)
 	finishedInit  bool
@@ -23,13 +23,15 @@ type fatDataReader struct {
 	partition     *fatPartition
 }
 
-func newFATDataReader(cluster uint32, partition *fatPartition, t bufferManager, size uint32) *fatDataReader {
+func newFATDataReader(cluster clusterNumber, partition *fatPartition, t bufferManager, size uint32) *fatDataReader {
 	dr := &fatDataReader{
 		cluster:   cluster,
 		tranquil:  t,
 		partition: partition,
 		size:      size,
 	}
+	trust.Infof("new fat data reader: cluster=%d", cluster)
+
 	//we want to initialize the page data
 	if e := dr.getMoreData(); e != sdOk {
 		trust.Errorf("unable to setup the FAT data reader, can't get initial data %d", cluster)
@@ -112,7 +114,7 @@ func (f *fatDataReader) endOfClusterChain() bool {
 	return f.cluster < 2 || f.cluster >= fat32EOCBoundary
 }
 
-func (f *fatDataReader) getNextClusterInChain() (uint32, int) {
+func (f *fatDataReader) getNextClusterInChain() (clusterNumber, int) {
 
 	if f.endOfClusterChain() {
 		trust.Errorf("should not be calling getNextClusterInChain when already at end of chain")
@@ -125,14 +127,15 @@ func (f *fatDataReader) getNextClusterInChain() (uint32, int) {
 	if f.partition.isFAT16 {
 		distance = uintptr(f.cluster) << 1
 	}
-	sectorOfFAT := distance >> 9 // divide by sectorSize
-	ptr, err := f.tranquil.PossiblyLoad(f.partition.fatOrigin + uint32(sectorOfFAT))
+	sectorOfFAT := sectorNumber(distance >> 9) // divide by sectorSize
+	ptr, err := f.tranquil.PossiblyLoad(f.partition.fatOrigin + sectorOfFAT)
 	if err != nil {
 		trust.Errorf("error reading fat sector " + err.Error())
 		return 0, sdError
 	}
 	offset := distance % sectorSize
 
+	// XXX is this reading cluster numbers? are we sure?
 	if f.partition.isFAT16 {
 		base := (*uint16)(unsafe.Pointer(uintptr(ptr) + offset)) // <<1 is because 2 bytes per
 		next = uint32(*base)
@@ -140,7 +143,7 @@ func (f *fatDataReader) getNextClusterInChain() (uint32, int) {
 		base := (*uint32)(unsafe.Pointer(uintptr(ptr) + offset)) // <<2 is because 4 bytes per
 		next = *base
 	}
-	f.cluster = next
+	f.cluster = clusterNumber(next)
 	if f.partition.isFAT16 {
 		warnFAT16ChainValue(next)
 	} else {
@@ -165,11 +168,16 @@ func (f *fatDataReader) getMoreData() int {
 	if !f.endOfClusterChain() {
 		//fetch the next page
 		var err error
-		f.sectorData, err = f.tranquil.PossiblyLoad(f.partition.clusterNumberToSector(f.cluster))
+		trust.Infof("getMoreData: sector=%d",
+			f.partition.clusterNumberToSector(1 /*xxx*/, f.cluster))
+		snum := f.partition.clusterNumberToSector(1 /*xxx*/, f.cluster)
+		f.sectorData, err = f.tranquil.PossiblyLoad(snum)
 		if err != nil {
 			trust.Errorf("unable to read data sector: %v", err.Error())
 			return sdError
 		}
+	} else {
+		trust.Infof("reached end of cluster chain")
 	}
 	return sdOk
 }

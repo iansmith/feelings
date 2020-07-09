@@ -75,6 +75,10 @@ type rawDirEnt struct {
 	Size           uint32
 }
 
+type sectorNumber uint32
+type clusterNumber uint32
+type inodeNumber uint64
+
 func strlenWithTerminator(p []uint8, terminator uint8) int {
 	l := 0
 	// tricky: order of the terms in the && matters
@@ -129,8 +133,11 @@ func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in set
 		}
 		log.Printf("read MBR: %+v", mbr)
 		log.Printf("active partiton: %+v", mbr.Partition1)
-		log.Printf("dead partiton: %+v", mbr.Partition2)
-		sdCard.activePartition.unusedSectors = mbr.Partition1.FirstSector // FAT16 needs this value so hold it
+		log.Printf(
+			"dead partiton: %+v", mbr.Partition2)
+		//deeply dubious xxx
+		first := uint32(mbr.Partition1.FirstSector) // FAT16 needs this value so hold it
+		sdCard.activePartition.unusedSectors = first
 		//try again for BPB at firstDataSector
 		read, buffer = sdReadblock(mbr.Partition1.FirstSector, 1)
 		if read == 0 {
@@ -163,11 +170,11 @@ func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in set
 	sdCard.activePartition.bytesPerSector = uint32(bpbFull.BytesPerSector) // Bytes per sector on partition
 	sdCard.activePartition.sectorsPerCluster = uint32(bpbFull.Spc)         // Hold the sector per cluster count
 	sdCard.activePartition.reservedSectorCount = uint32(bpbFull.Rsc)       // Hold the reserved sector count
-
-	if !bpbFull.isFat16 { // Check if FAT16/FAT32
+	if !bpbFull.isFat16 {                                                  // Check if FAT16/FAT32
 		// FAT32
-		sdCard.activePartition.rootCluster = bpbFull.fat32.RootCluster // Hold partition root cluster
-		sdCard.activePartition.fatOrigin = uint32(bpbFull.Rsc) + bpbFull.Hs + sdCard.activePartition.unusedSectors
+		sdCard.activePartition.rootCluster = clusterNumber(bpbFull.fat32.RootCluster) // Hold partition root cluster
+		raw := uint32(bpbFull.Rsc) + bpbFull.Hs + sdCard.activePartition.unusedSectors
+		sdCard.activePartition.fatOrigin = sectorNumber(raw)
 		trust.Infof("FAT32 Partition Info FAT Origin : 0x%x ", sdCard.activePartition.fatOrigin)
 		sdCard.activePartition.dataSectors = bpbFull.Ts32 - uint32(bpbFull.Rsc) - (bpbFull.fat32.FATSize32 * uint32(bpbFull.Nf))
 		//sdCard.partition.dataSectors = bpb->TotalSectors32 - bpb->ReservedSectorCount - (bpb->FSTypeData.fat32.FATSize32 * bpb->NumFATs);
@@ -180,6 +187,7 @@ func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in set
 		trust.Infof("FAT32 Volume Label: '%s', ID: 0x%08x\n",
 			string(bpbFull.fat32.volumeLabel[:]), bpbFull.fat32.VolumeID) //xxx because of problem in tinyo reflection with bpbfull
 		sdCard.activePartition.fatSize = uint32(bpbFull.Nf) * bpbFull.fat32.FATSize32
+		trust.Infof("full active part info: %#v", sdCard.activePartition)
 
 		if bpbFull.fat32.fileSystemType[0] != 'F' ||
 			bpbFull.fat32.fileSystemType[1] != 'A' ||
@@ -189,7 +197,8 @@ func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in set
 	} else {
 		// FAT16
 		sdCard.activePartition.rootCluster = 2 // Hold partition root cluster, FAT16 always start at 2
-		sdCard.activePartition.fatOrigin = sdCard.activePartition.unusedSectors + (uint32(bpbFull.Nf) * uint32(bpbFull.Spf16)) + 1
+		raw := sdCard.activePartition.unusedSectors + (uint32(bpbFull.Nf) * uint32(bpbFull.Spf16)) + 1
+		sdCard.activePartition.fatOrigin = sectorNumber(raw)
 		// data sectors x sectorsize = capacity ... I have check this on PC and gives right calc
 		sdCard.activePartition.dataSectors = bpbFull.Ts32 - (uint32(bpbFull.Nf) * uint32(bpbFull.Spf16)) - 33
 		trust.Infof("FAT16 reserved sectors: 0x%x", uint32(bpbFull.Rsc))
@@ -212,8 +221,11 @@ func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in set
 	return &sdCard
 }
 
-func (f *fatPartition) clusterNumberToSector(clusterNumber uint32) uint32 {
-	return ((clusterNumber - 2) * f.sectorsPerCluster) + f.fatOrigin + f.fatSize
+func (f *fatPartition) clusterNumberToSector(numFats uint32, c clusterNumber) sectorNumber {
+	cnum := uint32(c)
+	trust.Infof("xxx sects/cluster=%d, fatorigin=%d, fatsize=%d", f.sectorsPerCluster, f.fatOrigin, f.fatSize)
+	sect := ((cnum - 2) * f.sectorsPerCluster) + uint32(f.fatOrigin) + (f.fatSize * numFats)
+	return sectorNumber(sect)
 }
 
 func (f *rawDirEnt) unpack(buffer []uint8) bool {
@@ -359,19 +371,19 @@ func unpackPartitionBuffer(buffer []byte, initialPadding int, start int, end int
 type FAT32Filesystem struct {
 	tranq     bufferManager
 	sdcard    *sdCardInfo
-	inodeMap  map[string]uint64
-	nextInode uint64
+	inodeMap  map[string]inodeNumber
+	nextInode inodeNumber
 }
 
 func NewFAT32Filesystem(tranq *Tranquil, sdcard *sdCardInfo) *FAT32Filesystem {
 	return &FAT32Filesystem{
 		tranq:     tranq,
 		sdcard:    sdcard,
-		inodeMap:  make(map[string]uint64),
+		inodeMap:  make(map[string]inodeNumber),
 		nextInode: 1,
 	}
 }
-func (f *FAT32Filesystem) NewInode() uint64 {
+func (f *FAT32Filesystem) NewInode() inodeNumber {
 	result := f.nextInode
 	f.nextInode++
 	return result
@@ -385,16 +397,24 @@ func (f *FAT32Filesystem) ReadDir(path string, entries []*DirEnt) *PosixError {
 
 // OpenDir returns a directory pointer that you can then call ReadDir on, or it returns null.
 func (f *FAT32Filesystem) openRootDir() (*Dir, *PosixError) {
-	return f.readDirFromSector("/", f.sdcard.activePartition.rootCluster)
+	trust.Infof("open root dir rootCluster=%d=>%d",
+		f.sdcard.activePartition.rootCluster,
+		f.sdcard.activePartition.clusterNumberToSector(1 /*xxx*/, f.sdcard.activePartition.rootCluster))
+	return f.readDirFromCluster("/", f.sdcard.activePartition.rootCluster)
 }
 
 func (f *FAT32Filesystem) Open(path string) (io.Reader, *PosixError) {
+	trust.Infof("open %s: trying to resolve path", path)
 	entry, err := f.resolvePath(path, true)
 	if err != nil {
 		return nil, err
 	}
-	reader := newFATDataReader(uint32(entry.firstClusterHi)*256+uint32(entry.firstClusterLo),
-		f.sdcard.activePartition, f.tranq, entry.Size)
+	trust.Infof("opening %s: %x,%x (%x)", path, uint32(entry.firstClusterHi),
+		uint32(entry.firstClusterLo),
+		uint32(entry.firstClusterHi)*256+uint32(entry.firstClusterLo))
+	raw := uint32(entry.firstClusterHi)*256 + uint32(entry.firstClusterLo)
+	cnum := clusterNumber(raw)
+	reader := newFATDataReader(cnum, f.sdcard.activePartition, f.tranq, entry.Size)
 	if reader == nil {
 		trust.Errorf("unable to create new FATDataReader! need better error\n")
 		return nil, EUnknown // xxxx errors.New("should be the correct error here")
@@ -405,7 +425,9 @@ func (f *FAT32Filesystem) Open(path string) (io.Reader, *PosixError) {
 func (f *FAT32Filesystem) openDirFromEntry(entry *DirEnt) (*Dir, *PosixError) {
 	trust.Debugf("openDirFromEntry %s", entry.Name)
 	path := filepath.Clean(entry.Path)
-	return f.readDirFromSector(path, uint32(entry.firstClusterHi)*256+uint32(entry.firstClusterLo))
+	raw := uint32(entry.firstClusterHi)*256 + uint32(entry.firstClusterLo)
+	cnum := clusterNumber(raw)
+	return f.readDirFromCluster(path, cnum)
 }
 
 func (f *FAT32Filesystem) resolvePath(path string, isLast bool) (*DirEnt, *PosixError) {
@@ -443,7 +465,7 @@ func (f *FAT32Filesystem) resolvePath(path string, isLast bool) (*DirEnt, *Posix
 	return nil, ENoEnt
 }
 
-func (f *FAT32Filesystem) readDirFromSector(path string, sector uint32) (*Dir, *PosixError) {
+func (f *FAT32Filesystem) readDirFromCluster(path string, cnum clusterNumber) (*Dir, *PosixError) {
 	entries := 0
 	buf := make([]byte, directoryEntrySize)
 	lfnSeq := ""
@@ -451,8 +473,10 @@ func (f *FAT32Filesystem) readDirFromSector(path string, sector uint32) (*Dir, *
 	var r int
 	lfnSeqCurr := 0 //lfn's numbered from 1
 	var raw rawDirEnt
-	fr := newFATDataReader(sector, f.sdcard.activePartition, f.tranq, 0) //get root directory
-	result := NewDir(f, path, sector, 32)
+	trust.Infof("readDirFromCluster: %s,%d", path, cnum)
+	snum := f.sdcard.activePartition.clusterNumberToSector(1 /*xxx*/, cnum)
+	fr := newFATDataReader(cnum, f.sdcard.activePartition, f.tranq, 0) //get root directory
+	result := NewDir(f, path, snum, 32)
 outer:
 	for {
 		curr := 0

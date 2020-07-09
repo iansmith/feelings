@@ -33,7 +33,7 @@ func NewBitSet(size uint32, ptr unsafe.Pointer) *BitSet {
 	return result
 }
 
-func (b *BitSet) On(bit uint32) bool {
+func (b *BitSet) On(bit cacheIndex) bool {
 	boff := uintptr(bit >> 3) //divide by 8 to get number of bytes to move pointer
 	mask := uint64(1 << (bit % 64))
 	tmp := (*uint64)(unsafe.Pointer(uintptr(b.data) + boff))
@@ -55,8 +55,8 @@ var loadedBitSet uint64
 var sectorCache uint64
 
 type bufferManager interface {
-	PossiblyLoad(page uint32) (unsafe.Pointer, error) //loads if page is not in an existing buffer
-	DumpStats(clear bool)                             //pass true if you wants stats cleared as well
+	PossiblyLoad(sector sectorNumber) (unsafe.Pointer, error) //loads if page is not in an existing buffer
+	DumpStats(clear bool)                                     //pass true if you wants stats cleared as well
 }
 
 type Tranquil struct {
@@ -65,14 +65,14 @@ type Tranquil struct {
 	inUse        *BitSet
 	loader       loader
 	saver        saver
-	pageMap      map[uint32]bufferEntry
+	pageMap      map[sectorNumber]bufferEntry
 	cacheHits    uint64
 	cacheMisses  uint64
 	cacheOusters uint64
 }
 
-type loader func(uint32, unsafe.Pointer /*watch alignment!*/) int
-type saver func(uint32, unsafe.Pointer /*watch alignment!*/) int
+type loader func(sectorNumber, unsafe.Pointer /*watch alignment!*/) int
+type saver func(sectorNumber, unsafe.Pointer /*watch alignment!*/) int
 
 // pass in a contiguous buffer, must be a multiple of 512 bytes and the number of pages
 // 1page=512bytes is the 2nd param
@@ -82,21 +82,26 @@ func NewTraquilBufferManager(ptr unsafe.Pointer, sizeInPages uint32, bitSetData 
 		sizeInPages: sizeInPages,
 		data:        ptr,
 		inUse:       NewBitSet(sizeInPages, bitSetData),
-		pageMap:     make(map[uint32]bufferEntry),
+		pageMap:     make(map[sectorNumber]bufferEntry),
 		loader:      ld,
 		saver:       sv,
+	}
+	if result.loader == nil {
+		result.loader = readInto
 	}
 	return result
 }
 
+type cacheIndex uint32
+
 type bufferEntry struct {
 	ptr       unsafe.Pointer
-	cachePage uint32
+	cachePage cacheIndex
 }
 
 // PossiblyLoad returns a pointer to the data page requested, possibly loading the
 // the page as it does so.  It
-func (t *Tranquil) PossiblyLoad(sector uint32) (unsafe.Pointer, error) {
+func (t *Tranquil) PossiblyLoad(sector sectorNumber) (unsafe.Pointer, error) {
 	entry, ok := t.pageMap[sector]
 	if ok {
 		t.cacheHits++
@@ -107,10 +112,10 @@ func (t *Tranquil) PossiblyLoad(sector uint32) (unsafe.Pointer, error) {
 	//do a few random samples seeing if we get lucky
 	fails := 0
 	haveWinner := false
-	winner := uint32(0)
+	winner := cacheIndex(0)
 	for fails < failLimit {
 		fails++
-		r := uint32(rand.Intn(int(t.sizeInPages)))
+		r := cacheIndex(rand.Intn(int(t.sizeInPages)))
 		if t.inUse.On(r) {
 			continue
 		}
@@ -120,7 +125,7 @@ func (t *Tranquil) PossiblyLoad(sector uint32) (unsafe.Pointer, error) {
 	}
 	if !haveWinner {
 		//any free spaces?
-		for i := uint32(0); i < t.sizeInPages; i++ {
+		for i := cacheIndex(0); i < cacheIndex(t.sizeInPages); i++ {
 			if t.inUse.On(i) {
 				continue
 			}
@@ -131,15 +136,14 @@ func (t *Tranquil) PossiblyLoad(sector uint32) (unsafe.Pointer, error) {
 		if !haveWinner {
 			t.cacheOusters++
 			//randomly pick a loser, all spots full
-			r := uint32(rand.Intn(int(t.sizeInPages)))
+			r := cacheIndex(rand.Intn(int(t.sizeInPages)))
 			for sector, entry := range t.pageMap {
 				if entry.cachePage == r {
-					winner = sector //really, he's the unlucky loser who got picked as r
 					haveWinner = true
+					winner = entry.cachePage
+					delete(t.pageMap, sector)
+					break
 				}
-			}
-			if haveWinner {
-				delete(t.pageMap, sector)
 			}
 		}
 	}
@@ -154,6 +158,7 @@ func (t *Tranquil) PossiblyLoad(sector uint32) (unsafe.Pointer, error) {
 	ptr := unsafe.Pointer(uintptr(t.data) + uintptr(winner*pageUnit))
 	//store the mapping
 	t.pageMap[sector] = bufferEntry{ptr, winner}
+	trust.Infof("possibly load : will now load sector %d", sector)
 	if err := t.loader(sector, ptr); err != sdOk {
 		trust.Errorf("buffer management failed to load page: %x", sector)
 		return nil, errors.New("read failed")

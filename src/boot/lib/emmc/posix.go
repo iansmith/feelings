@@ -98,8 +98,8 @@ const (
 
 type Dir struct {
 	fs       *FAT32Filesystem
-	sector   uint32
-	inode    uint64
+	sector   sectorNumber
+	inode    inodeNumber
 	path     string
 	contents []DirEnt
 }
@@ -112,12 +112,12 @@ type DirEnt struct {
 	IsDir          bool
 	Size           uint32
 	Path           string
-	Inode          uint64
+	Inode          inodeNumber
 	firstClusterLo uint16
 	firstClusterHi uint16
 }
 
-func NewDir(fs *FAT32Filesystem, path string, sector uint32, sizeHint int) *Dir {
+func NewDir(fs *FAT32Filesystem, path string, sector sectorNumber, sizeHint int) *Dir {
 	result := &Dir{
 		fs:       fs,
 		sector:   sector,

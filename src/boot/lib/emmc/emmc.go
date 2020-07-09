@@ -244,13 +244,13 @@ func emmcinit() int {
 	//clk = getclkrate(ClkEmmc); XXX fix me
 	if clk == 0 {
 		clk = Extfreq
-		trust.Infof("emmc: assuming external clock %d Mhz\n", clk/1000000)
+		trust.Debugf("emmc: assuming external clock %d Mhz\n", clk/1000000)
 	}
 	emmc.extclk = clk
-	trust.Debugf("emmc control %08x %08x %08x\n",
-		machine.EMMC.Control0.Get(),
-		machine.EMMC.Control1.Get(),
-		machine.EMMC.Control2.Get())
+	// trust.Debugf("emmc control %08x %08x %08x\n",
+	// 	machine.EMMC.Control0.Get(),
+	// 	machine.EMMC.Control1.Get(),
+	// 	machine.EMMC.Control2.Get())
 	machine.EMMC.Control1.SetResetHostCircuit()
 	delay(10)
 	for machine.EMMC.Control1.ResetHostCircuitIsSet() {
@@ -264,38 +264,6 @@ func emmcinit() int {
 
 var everythingButCardIntr = ^(uint32(Cardintr))
 var everythingButDwidthAndHighspeed = ^(uint32(Dwidth4 | Hispeed))
-
-func emmcgoidle() {
-	machine.EMMC.Control0.Set(everythingButDwidthAndHighspeed)
-	emmcclk(Initfreq)
-	if machine.EMMC.DebugStatus.Get()&Cmdinhibit != 0 {
-		trust.Errorf("unable to go idle, command inhibit")
-	}
-	if machine.EMMC.DebugStatus.Get()&Datinhibit != 0 {
-		trust.Errorf("data inhibit high, but not used by go idle")
-	}
-	machine.EMMC.Argument.Set(0)
-	r := machine.EMMC.Interrupt.Get() & everythingButCardIntr
-	if r != 0 {
-		if r != Cardinsert {
-			trust.Errorf("before command, intr was %x", r)
-		}
-		machine.EMMC.Interrupt.Set(r)
-	}
-	machine.EMMC.CommandTransferMode.Set(0)
-	for {
-		if machine.EMMC.Interrupt.CommandDoneIsSet() {
-			machine.EMMC.Interrupt.Set(machine.EMMC.Interrupt.Get() | Cmddone)
-			break
-		}
-		if machine.EMMC.Interrupt.Get() != 0 {
-			trust.Infof("got something from intr: %x", machine.EMMC.Interrupt.Get())
-			break
-		}
-		delay(1)
-	}
-
-}
 
 var zero = uint32(0)
 
@@ -366,7 +334,7 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 	}
 	// cmd inhibit
 	if machine.EMMC.DebugStatus.Get()&Cmdinhibit != 0 {
-		trust.Infof("emmccmd: need to reset Cmdinhibit intr %x stat %x\n",
+		trust.Debugf("emmccmd: need to reset Cmdinhibit intr %x stat %x\n",
 			machine.EMMC.Interrupt.Get(), machine.EMMC.DebugStatus.Get())
 		machine.EMMC.Control1.SetResetCommand()
 		for machine.EMMC.DebugStatus.Get()&Cmdinhibit != 0 {
@@ -375,7 +343,7 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 	}
 	//data inhibit
 	if (machine.EMMC.DebugStatus.Get()&Datinhibit != 0) && (((c & Isdata) != 0) || ((c & Respmask) == Resp48busy)) {
-		trust.Infof("emmccmd: need to reset Datinhibit intr %x stat %x\n",
+		trust.Debugf("emmccmd: need to reset Datinhibit intr %x stat %x\n",
 			machine.EMMC.Interrupt.Get(), machine.EMMC.DebugStatus.Get())
 		machine.EMMC.Control1.SetResetData()
 		for machine.EMMC.Control1.ResetDataIsSet() {
@@ -390,7 +358,7 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 	i := machine.EMMC.Interrupt.Get() & 0xffffff //top byte is not used but has crap in it
 	if i&everythingButCardIntr != 0 {
 		if i != Cardinsert {
-			trust.Infof("emmc: before command, intr was %x, clearning prior interrupt\n", i)
+			trust.Debugf("emmc: before command, intr was %x, clearning prior interrupt\n", i)
 		}
 		machine.EMMC.Interrupt.Set(i)
 	}
@@ -413,7 +381,7 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 	//are we done?
 	if i&commandDoneOrError != Cmddone {
 		if i&everythingButCommandDoneOrError != Ctoerr {
-			trust.Infof("emmc: cmd %x arg %x error intr %x stat %x\n",
+			trust.Debugf("emmc: cmd %x arg %x error intr %x stat %x\n",
 				c, arg, i, machine.EMMC.DebugStatus.Get())
 		}
 		machine.EMMC.Interrupt.Set(i) //clears the interrupt
@@ -536,4 +504,88 @@ func mmcinterruptReceived() {
 		// wakeup cardr
 	}
 	machine.EMMC.Interrupt.Set(^i)
+}
+
+// sdinit just gets the card prepared. It does not actually send all the
+// commands necessary for the device to be a real disk.  AFter emmcinit
+// it is in the "standby" state and we need to do various things to get
+// it ready for data transfer state as well as running at a higher
+// clockspeed.
+func sdfullinit() int {
+	trust.Debugf("--- SEND IF COND --- ")
+	var resp [4]uint32
+	if err := emmccmd(SendIfCond, 0x00000142, &resp); err != sdOk {
+		trust.Errorf("failed to issue SEND_IF_COND (for voltage)")
+		machine.Abort()
+	}
+	delay(3)
+	trust.Debugf("--- APP CMD --- : %+v", resp)
+	ok := false
+loop:
+	for j := 0; j < 10 && !ok; j++ {
+		err := emmccmd(Appcmd, 0, &resp)
+		if err != sdOk {
+			trust.Errorf("failed to issue APP CMD, but will retry")
+		}
+		trust.Debugf("APP CMD result (%v): %+v", err == sdOk, resp)
+		if resp[1] != 0 {
+			delay(10)
+			goto loop
+		}
+		trust.Debugf("------ OP COND ---- : %+v", resp)
+		if err := emmccmd(OpCond, 0x40300000, &resp); err != sdOk {
+			trust.Errorf("failed to issue OP COND")
+			delay(10)
+			goto loop
+		}
+		ok = true
+	}
+	if !ok {
+		trust.Errorf("Unable to get the APP CMD + OP COND to initialize")
+		return sdTimeout
+	}
+	trust.Debugf("---- SEND ALL CID---- : %+v", resp)
+	if err := emmccmd(SendAllCID, 0, &resp); err != sdOk {
+		trust.Errorf("failed to issue SENDALLCID")
+		return sdError
+	}
+	delay(10)
+	trust.Debugf(" --> %+x", resp)
+	trust.Debugf("---- SEND RELATIVE ADDR 1---- : %+v", resp)
+	if err := emmccmd(SendRelativeAddr, 0, &resp); err != sdOk {
+		trust.Errorf("failed to issue SEND RELATIVE ADDR")
+		return sdError
+	}
+	delay(10)
+	trust.Debugf("---- SEND RELATIVE ADDR 2---- : %+v", resp)
+	if err := emmccmd(SendRelativeAddr, 0, &resp); err != sdOk {
+		trust.Errorf("failed to issue SEND RELATIVE ADDR")
+		return sdError
+	}
+	rca := resp[0] >> 16
+	trust.Debugf("--> RCA: %x", rca)
+	delay(10)
+
+	trust.Debugf("---- SEND CSD (with RCA) ---- : %+v", resp)
+	if err := emmccmd(SendCSD, rca<<16, &resp); err != sdOk {
+		trust.Errorf("failed to issue SEND CSD")
+		return sdError
+	}
+	trust.Debugf("--> CSD: %+x", resp)
+	delay(10)
+
+	trust.Debugf("---- SELECT CARD---- : %+v", resp)
+	if err := emmccmd(SelectCard, rca<<16, &resp); err != sdOk {
+		trust.Errorf("failed to issue SELECT CARD")
+		return sdError
+	}
+	delay(10)
+	trust.Debugf("---- SET BLOCKLEN ---- : %+v", resp)
+	if err := emmccmd(SetBlockLen, sectorSize, &resp); err != sdOk {
+		trust.Errorf("failed to issue SET BLOCKLEN")
+		return sdError
+	}
+	delay(10)
+	machine.EMMC.BlockSizeAndCount.SetBlkSize(sectorSize)
+	return sdOk
 }

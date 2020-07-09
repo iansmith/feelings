@@ -23,7 +23,7 @@ BOOTASM=rpi3_baremetal_boot
 BOOTLIB=$(FEELINGS)/src/boot/lib
 TARGET=aarch64-none-elf
 
-IMAGEFILE=/Users/iansmith/feelings/samples/emmc/test/image.img
+IMAGEFILE=/Users/iansmith/mnt/feelings.img
 
 $(BOOTASM).o: $(BOOTLIB)/$(BOOTASM).S
 	$(TINYGO_CLANG) -target $(TARGET) -c -o $(BOOTASM).o $(BOOTLIB)/$(BOOTASM).S

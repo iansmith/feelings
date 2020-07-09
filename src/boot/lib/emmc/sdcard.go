@@ -13,13 +13,16 @@ const sdOk = 0
 const sdTimeout = -1
 const sdError = -2
 
+const showBlockDataRead = true
+
 // this is the either the whole disk or the 1st partition
 type sdCardInfo struct {
 	// xxx add details about the card itself
 	activePartition *fatPartition
 }
 
-func (s *sdCardInfo) readInto(sector uint32, data unsafe.Pointer) int {
+func readInto(sector sectorNumber, data unsafe.Pointer) int {
+	trust.Infof("readInto (also loader) sector %d", sector)
 	result := sdReadblockInto(sector, 1, data)
 	if result != sdOk {
 		return result
@@ -28,7 +31,7 @@ func (s *sdCardInfo) readInto(sector uint32, data unsafe.Pointer) int {
 }
 
 //reads into a buffer created on the heap
-func sdReadblock(lba uint32, num uint32) (uint32, []byte) {
+func sdReadblock(lba sectorNumber, num uint32) (uint32, []byte) {
 	buffer := make([]byte, sectorSize*num)
 	buf := unsafe.Pointer(&buffer[0])
 	err := sdReadblockInto(lba, num, buf)
@@ -40,8 +43,9 @@ func sdReadblock(lba uint32, num uint32) (uint32, []byte) {
 
 //reads num sectors starting at lba into a buffer
 //provided
-func sdReadblockInto(lba uint32, num uint32, buf unsafe.Pointer) int {
+func sdReadblockInto(lba sectorNumber, num uint32, buf unsafe.Pointer) int {
 	machine.EMMC.BlockSizeAndCount.SetBlkCnt(num)
+
 	if num < 1 {
 		trust.Errorf("sdreadblock: requested bad number of blocks (%d), using 1 instead",
 			num)
@@ -70,23 +74,28 @@ func sdReadblockInto(lba uint32, num uint32, buf unsafe.Pointer) int {
 				machine.EMMC.DebugStatus.Get()&Datinhibit != 0,
 				machine.EMMC.Interrupt.ErrorIsSet(),
 				machine.SystemTime())
-			machine.Abort()
+			return sdTimeout
 		}
 	}
 
 	var resp [4]uint32
-	trust.Debugf("--- start reading %d blocks, first block @%d ---", num, lba)
+	if showBlockDataRead {
+		trust.Infof("--- start reading %d blocks, first block @%d ---", num, lba)
+	}
 	if num == 1 {
-		if emmccmd(ReadSingle, lba, &resp) != 0 {
+		raw := uint32(lba << 9)
+		if emmccmd(ReadSingle, raw, &resp) != 0 {
 			trust.Errorf("aborting read block into for block %d", lba)
 			return sdError
 		}
 	} else {
-		if emmccmd(ReadMulti, lba, &resp) != 0 {
+		raw := uint32(lba)
+		if emmccmd(ReadMulti, raw, &resp) != 0 {
 			trust.Errorf("aborting read multi block into for block %d", lba)
 			return sdError
 		}
 	}
+	trust.Debugf("emmccmd produced %+v response", resp)
 	ct := 0
 	trust.Debugf("-- testing data read is ready ---")
 	for !machine.EMMC.Interrupt.ReadReadyIsSet() && ct < 10 {
@@ -147,17 +156,23 @@ func syncio(write bool, buf unsafe.Pointer, bufSize uint32) int {
 
 	if !write {
 		for d := uint32(0); d < bufSize/4; d++ {
-			if d%8 == 0 {
-				fmt.Printf("%04d:", d*4)
+			if showBlockDataRead {
+				if d%8 == 0 {
+					fmt.Printf("0x%03x:", d*4)
+				}
 			}
 			buffer := (*uint32)(unsafe.Pointer(uintptr(buf) + uintptr(d*4)))
 			*buffer = machine.EMMC.Data.Get()
-			fmt.Printf("%08x ", *buffer)
-			if d%8 == 7 {
-				fmt.Printf("\n")
+			if showBlockDataRead {
+				fmt.Printf("%08x ", *buffer)
+			}
+			if showBlockDataRead {
+				if d%8 == 7 {
+					fmt.Printf("\n")
+				}
 			}
 		}
-		trust.Debugf("read %d bytes", bufSize)
+		trust.Debugf("<--- read %d bytes", bufSize)
 	} else {
 		panic("not implemented yet")
 	}

@@ -3,8 +3,6 @@ package trust
 import (
 	"fmt"
 
-	tgr "runtime"
-
 	"machine"
 )
 
@@ -44,6 +42,8 @@ const (
 	DebugMask MaskLevel = 0x8
 	StatsMask MaskLevel = 0x10
 	fatalMask MaskLevel = 0x80
+
+	EverythingButDebug MaskLevel = ErrorMask | WarnMask | InfoMask | StatsMask
 )
 
 type LogSink interface {
@@ -74,24 +74,25 @@ func (l *Logger) SetLevel(mask MaskLevel) MaskLevel {
 		l.sink.Printf(" WARN: trust.SetLevel is turning of log messages\n")
 	}
 	result := Nothing
-	switch {
-	case mask&ErrorMask > 0:
+
+	if mask&ErrorMask > 0 {
 		result |= ErrorMask
-		fallthrough
-	case mask&WarnMask > 0:
+	}
+	if mask&WarnMask > 0 {
 		result |= WarnMask
-		fallthrough
-	case mask&InfoMask > 0:
+	}
+	if mask&InfoMask > 0 {
 		result |= InfoMask
-		fallthrough
-	case mask&DebugMask > 0:
+	}
+	if mask&DebugMask > 0 {
 		result |= DebugMask
-		fallthrough
-	case mask&StatsMask > 0:
+	}
+	if mask&StatsMask > 0 {
 		result |= StatsMask
 	}
 	r := l.level & 0x1f
 	l.level = result | fatalMask
+
 	return r
 }
 func (l *Logger) Level() MaskLevel {
@@ -125,6 +126,8 @@ func (l *Logger) logf(m MaskLevel, format string, params ...interface{}) {
 	}
 	start := 0
 	switch {
+	case m&fatalMask > 0:
+		l.sink.Printf("FATAL:")
 	case m&ErrorMask > 0:
 		l.sink.Printf("ERROR:")
 	case m&WarnMask > 0:
@@ -141,7 +144,6 @@ func (l *Logger) logf(m MaskLevel, format string, params ...interface{}) {
 		l.sink.Printf("STATS[%s]:", s)
 		start = 1
 	}
-
 	if len(format) == 0 {
 		format = "\n"
 	} else if format[len(format)-1] != '\n' {
@@ -151,7 +153,7 @@ func (l *Logger) logf(m MaskLevel, format string, params ...interface{}) {
 	if len(params) == start {
 		l.sink.Printf(format)
 	} else {
-		l.sink.Printf(format, params...)
+		l.sink.Printf(format, params[start:]...)
 	}
 }
 
@@ -162,7 +164,7 @@ func Fatalf(exitCode int, format string, params ...interface{}) {
 }
 func (l *Logger) Fatalf(exitCode int, format string, params ...interface{}) {
 	l.logf(fatalMask, format, params...)
-	tgr.Exit()
+	machine.Abort()
 }
 
 //Errorf prints the given log message (format + params) using the ErrorMask level.
