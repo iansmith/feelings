@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
-	"lib/trust"
 	"log"
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
+
+	"lib/trust"
 )
 
 // in linux
@@ -223,7 +224,6 @@ func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in set
 
 func (f *fatPartition) clusterNumberToSector(numFats uint32, c clusterNumber) sectorNumber {
 	cnum := uint32(c)
-	trust.Infof("xxx sects/cluster=%d, fatorigin=%d, fatsize=%d", f.sectorsPerCluster, f.fatOrigin, f.fatSize)
 	sect := ((cnum - 2) * f.sectorsPerCluster) + uint32(f.fatOrigin) + (f.fatSize * numFats)
 	return sectorNumber(sect)
 }
@@ -530,7 +530,8 @@ outer:
 				longName = lfnSeq
 			}
 			lfnSeq = ""
-			lfnSeqCurr = 0 // lfn's seqence numbers start at 1
+			lfnSeqCurr = 0 // lfn's seqence numbers start at 1??
+
 			result.addEntry(longName, &raw)
 		}
 	}

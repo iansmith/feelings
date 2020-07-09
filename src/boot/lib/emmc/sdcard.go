@@ -13,7 +13,7 @@ const sdOk = 0
 const sdTimeout = -1
 const sdError = -2
 
-const showBlockDataRead = true
+const showBlockDataRead = false
 
 // this is the either the whole disk or the 1st partition
 type sdCardInfo struct {
@@ -22,7 +22,7 @@ type sdCardInfo struct {
 }
 
 func readInto(sector sectorNumber, data unsafe.Pointer) int {
-	trust.Infof("readInto (also loader) sector %d", sector)
+	trust.Infof("readInto buffer, sector %d", sector)
 	result := sdReadblockInto(sector, 1, data)
 	if result != sdOk {
 		return result

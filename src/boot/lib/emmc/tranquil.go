@@ -158,7 +158,6 @@ func (t *Tranquil) PossiblyLoad(sector sectorNumber) (unsafe.Pointer, error) {
 	ptr := unsafe.Pointer(uintptr(t.data) + uintptr(winner*pageUnit))
 	//store the mapping
 	t.pageMap[sector] = bufferEntry{ptr, winner}
-	trust.Infof("possibly load : will now load sector %d", sector)
 	if err := t.loader(sector, ptr); err != sdOk {
 		trust.Errorf("buffer management failed to load page: %x", sector)
 		return nil, errors.New("read failed")

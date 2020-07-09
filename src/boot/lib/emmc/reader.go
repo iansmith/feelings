@@ -168,17 +168,13 @@ func (f *fatDataReader) getMoreData() int {
 	if !f.endOfClusterChain() {
 		//fetch the next page
 		var err error
-		trust.Infof("getMoreData: sector=%d",
-			f.partition.clusterNumberToSector(1 /*xxx*/, f.cluster))
 		snum := f.partition.clusterNumberToSector(1 /*xxx*/, f.cluster)
 		f.sectorData, err = f.tranquil.PossiblyLoad(snum)
 		if err != nil {
 			trust.Errorf("unable to read data sector: %v", err.Error())
 			return sdError
 		}
-	} else {
-		trust.Infof("reached end of cluster chain")
-	}
+	} //otherwise, at end of cluster chain
 	return sdOk
 }
 

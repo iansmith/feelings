@@ -137,7 +137,7 @@ func (d *Dir) addEntry(longName string, raw *rawDirEnt) {
 	if len(d.contents) == cap(d.contents) {
 		//ugh, copy
 		tmp := make([]DirEnt, 0, cap(d.contents)*2)
-		copy(tmp[0:cap(d.contents)], d.contents[0:cap(d.contents)])
+		tmp = append(tmp, d.contents...)
 		d.contents = tmp
 	}
 	yr := int(((raw.CreateDate >> 9) & 0x7f) + 1980)

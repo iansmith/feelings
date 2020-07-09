@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"strings"
 	"unsafe"
 
 	"device/arm"
@@ -60,7 +61,7 @@ func main() {
 	//for now, hold the buffers on stack
 	sectorCache := make([]byte, 0x200<<6) //0x40 pages
 	sectorBitSet := make([]uint64, 1)
-	//trust.DefaultLogger.SetLevel(trust.EverythingButDebug)
+	trust.DefaultLogger.SetLevel(trust.EverythingButDebug)
 
 	//raw init of interface
 	if emmcinit() != 0 {
@@ -82,24 +83,17 @@ func main() {
 		machine.Abort()
 	}
 
-	buf := make([]byte, 512)
-	if err := readInto(sectorNumber(4228), unsafe.Pointer(&buf[0])); err != sdOk {
-		trust.Errorf("unable to read sector %d: %v", 19929, err)
-		machine.Abort()
-	}
-	bytesRead, _ := sdReadblock( /*was 0x20*/ sdcard.activePartition.clusterNumberToSector(2, 0x1d), 1)
-	trust.Debugf("read lba 0x20: %d bytes", bytesRead)
-
 	tranq := NewTraquilBufferManager(unsafe.Pointer(&sectorCache[0]), 0x40,
 		unsafe.Pointer(&sectorBitSet[0]), nil, nil)
 	fs := NewFAT32Filesystem(tranq, sdcard)
 	path := "/motd-news"
 	rd, err := fs.Open(path)
 	if err != nil {
-		trust.Fatalf(1, "unable to open path: %s", path)
+		trust.Errorf("unable to open path: %s: %v", path, err)
 		machine.Abort()
 	}
 	readerBuf := make([]uint8, 256)
+	builder := strings.Builder{}
 	for {
 		n, err := rd.Read(readerBuf)
 		if err == io.EOF {
@@ -107,11 +101,16 @@ func main() {
 		}
 		if err != nil {
 			trust.Errorf("failed reading file: %s", err.Error())
+			machine.Abort()
 		}
 		if n == 0 {
 			continue
 		}
-		s := string(readerBuf[:n])
-		fmt.Printf(s)
+		if _, err := builder.Write(readerBuf[:n]); err != nil {
+			trust.Errorf("failed to write to builder: %v", err)
+			machine.Abort()
+		}
+		fmt.Printf(builder.String())
 	}
+	machine.Abort()
 }
