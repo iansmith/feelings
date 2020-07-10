@@ -1,4 +1,4 @@
-package main
+package emmc
 
 import (
 	"fmt"
@@ -53,7 +53,7 @@ type fatPartition struct {
 	isFAT16             bool
 }
 
-func main() {
+func sampleMain() {
 	machine.MiniUART = machine.NewUART()
 	_ = machine.MiniUART.Configure(&machine.UARTConfig{ /*no interrupt*/ })
 
@@ -72,13 +72,13 @@ func main() {
 	// we will be ready for proper init
 	emmcenable()
 
-	if err := sdfullinit(); err != sdOk {
+	if err := sdfullinit(); err != EmmcOk {
 		trust.Errorf("Unable to do a full initialization of the EMMC interafce, aborting")
 		machine.Abort()
 	}
 
-	sdcard := fatGetPartition(buffer) //data read into this buffer
-	if sdcard == nil {
+	sdcard, err := fatGetPartition(buffer) //data read into this buffer
+	if err != EmmcOk {
 		trust.Errorf("Unable to read MBR or unable to parse BIOS parameter block")
 		machine.Abort()
 	}
@@ -88,7 +88,7 @@ func main() {
 	fs := NewFAT32Filesystem(tranq, sdcard)
 	path := "/motd-news"
 	rd, err := fs.Open(path)
-	if err != nil {
+	if err != EmmcOk {
 		trust.Errorf("unable to open path: %s: %v", path, err)
 		machine.Abort()
 	}
@@ -99,7 +99,7 @@ func main() {
 		if err == io.EOF {
 			break
 		}
-		if err != nil {
+		if err != EmmcOk {
 			trust.Errorf("failed reading file: %s", err.Error())
 			machine.Abort()
 		}

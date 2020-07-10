@@ -1,11 +1,14 @@
-package main
+package emmc
 
 import (
-	"errors"
-	"io"
-	"lib/trust"
+	"fmt"
 	"unsafe"
+
+	"lib/trust"
 )
+
+const readerDebug = false
+const readerDumpSector = false
 
 // fat data reader has three levels of cycling:
 // 1.top level is the cluster id which is a chain through the FAT tables
@@ -23,34 +26,40 @@ type fatDataReader struct {
 	partition     *fatPartition
 }
 
-func newFATDataReader(cluster clusterNumber, partition *fatPartition, t bufferManager, size uint32) *fatDataReader {
+func newFATDataReader(cluster clusterNumber, partition *fatPartition,
+	t bufferManager, size uint32) (*fatDataReader, EmmcError) {
 	dr := &fatDataReader{
 		cluster:   cluster,
 		tranquil:  t,
 		partition: partition,
 		size:      size,
 	}
-	trust.Infof("new fat data reader: cluster=%d", cluster)
+	if readerDebug {
+		trust.Debugf("new fat data reader: cluster=%d", cluster)
+	}
 
 	//we want to initialize the page data
-	if e := dr.getMoreData(); e != sdOk {
-		trust.Errorf("unable to setup the FAT data reader, can't get initial data %d", cluster)
-		return nil
+	if e := dr.getMoreData(); e != EmmcOk {
+		trust.Errorf("unable to setup the FAT data reader, "+
+			"can't get initial data in cluster %d", cluster)
+		return nil, EmmcBadInitialRead
 	}
-	return dr
+	return dr, EmmcOk
 }
 
-func (f *fatDataReader) Read(p []byte) (int, error) {
+func (f *fatDataReader) Read(p []byte) (int, EmmcError) {
 	if f.endOfClusterChain() { //our work here is done, already finished reading
-		return 0, io.EOF
+		return 0, EmmcEOF
 	}
 	l := len(p)
 	if l == 0 {
-		return 0, nil //nothing to do, cause infinite loop?
+		return 0, EmmcNoBuffer //nothing to do, cause infinite loop?
 	}
 	atEOF := false
 	isError := false
 	result := 0
+	var err EmmcError
+
 	//this is the case where we want to stop, despite not being out of data... have to be
 	//careful with size 0 directories...
 	if f.size > 0 && f.totalConsumed == f.size {
@@ -63,6 +72,10 @@ func (f *fatDataReader) Read(p []byte) (int, error) {
 		l = int(f.size - f.totalConsumed) //clip it to the amount remaining w.r.t. size
 	}
 	//wants less than what is available on this page
+	if readerDebug {
+		trust.Debugf("READ: f.current=%d, buffersize=%d (sum=%d) compared to %d -- total consumed=%d",
+			f.current, uint32(l), f.current+uint32(l), sectorSize, f.totalConsumed)
+	}
 	if f.current+uint32(l) < sectorSize {
 		base := (uintptr)(unsafe.Pointer(uintptr(f.sectorData) + uintptr(f.current)))
 		for i := 0; i < l; i++ {
@@ -82,27 +95,33 @@ func (f *fatDataReader) Read(p []byte) (int, error) {
 		result = int(remaining)
 	}
 	//at the edge of a page
+	if readerDebug {
+		trust.Debugf("READ? are we at end of page? f.current=%d compared to %d",
+			f.current, sectorSize)
+	}
 	if f.current == sectorSize {
 		if f.endOfClusterChain() { //this is the EOF cause by no more data
 			atEOF = true
 			goto returnError
 		}
 		//deal with the case where we need another page
-		ok := f.getMoreData()
-		if ok != sdOk {
+		if readerDebug {
+			trust.Debugf("READ: need more data!")
+		}
+		err = f.getMoreData()
+		if err != EmmcOk {
 			isError = true
 			goto returnError
 		}
 	}
 	//everything looks ok... this is the happy path
-	return result, nil
+	return result, EmmcOk
 returnError:
 	if isError {
-		trust.Errorf("error occured reading the sector of FAT32")
-		return 0, errors.New("need to return a better error code from read")
+		return 0, err
 	}
 	if atEOF {
-		return 0, io.EOF
+		return 0, EmmcEOF
 	}
 	panic("unknown read state")
 }
@@ -114,68 +133,103 @@ func (f *fatDataReader) endOfClusterChain() bool {
 	return f.cluster < 2 || f.cluster >= fat32EOCBoundary
 }
 
-func (f *fatDataReader) getNextClusterInChain() (clusterNumber, int) {
+func (f *fatDataReader) getNextClusterInChain() (clusterNumber, EmmcError) {
 
 	if f.endOfClusterChain() {
-		trust.Errorf("should not be calling getNextClusterInChain when already at end of chain")
-		return f.cluster, sdOk
+		return f.cluster, EmmcOk
 	}
 	var next uint32
 
 	//load the needed page
-	distance := uintptr(f.cluster) << 2
+	distance := uintptr(f.cluster) << 2 //<<2 is because 4 bytes per
 	if f.partition.isFAT16 {
-		distance = uintptr(f.cluster) << 1
+		distance = uintptr(f.cluster) << 1 // <<1 is because 2 bytes per
 	}
 	sectorOfFAT := sectorNumber(distance >> 9) // divide by sectorSize
 	ptr, err := f.tranquil.PossiblyLoad(f.partition.fatOrigin + sectorOfFAT)
-	if err != nil {
-		trust.Errorf("error reading fat sector " + err.Error())
-		return 0, sdError
+	if err != EmmcOk {
+		return 0, err
+	}
+	if readerDumpSector {
+		fmt.Printf("--- sector %d ---\n", f.partition.fatOrigin+sectorOfFAT)
+		for i := 0; i < 512; i += 32 {
+			fmt.Printf("0x%03x:", i)
+			for j := 0; j < 32; j++ {
+				bptr := (*byte)(unsafe.Pointer(uintptr(ptr) + uintptr(i+j)))
+				fmt.Printf("%02x", *bptr)
+				if *bptr > 32 && *bptr < 127 {
+					fmt.Printf("%c ", *bptr)
+				} else {
+					fmt.Printf("  ")
+				}
+				if j == 16 {
+					fmt.Printf("-")
+				}
+				if j != 0 && j != 16 && j%4 == 0 {
+					fmt.Printf(" ")
+				}
+			}
+			fmt.Printf("\n")
+		}
 	}
 	offset := distance % sectorSize
-
+	if readerDebug {
+		trust.Debugf("getNextClusterInChain: on the sector of fat offset is 0x%x", offset)
+	}
 	// XXX is this reading cluster numbers? are we sure?
 	if f.partition.isFAT16 {
-		base := (*uint16)(unsafe.Pointer(uintptr(ptr) + offset)) // <<1 is because 2 bytes per
+		base := (*uint16)(unsafe.Pointer(uintptr(ptr) + offset))
 		next = uint32(*base)
 	} else {
-		base := (*uint32)(unsafe.Pointer(uintptr(ptr) + offset)) // <<2 is because 4 bytes per
+		base := (*uint32)(unsafe.Pointer(uintptr(ptr) + offset))
 		next = *base
 	}
+	if readerDebug {
+		trust.Debugf("getNextClusterInChain: next cluster is 0x%x", next)
+	}
+
 	f.cluster = clusterNumber(next)
 	if f.partition.isFAT16 {
 		warnFAT16ChainValue(next)
 	} else {
 		warnFAT32ChainValue(next)
 	}
-	return f.cluster, sdOk
+	return f.cluster, EmmcOk
 }
 
-func (f *fatDataReader) getMoreData() int {
+func (f *fatDataReader) getMoreData() EmmcError {
 	// on first call, we just load the buffer we were asked to start with, otherwise
 	// we are here because we need the _next_ blob
 	if f.finishedInit == false {
 		f.finishedInit = true
+		if readerDebug {
+			trust.Debugf("getMoreData: finished init was false, so not reading start")
+		}
 	} else {
 		f.current = 0
 		c, err := f.getNextClusterInChain()
-		if err != sdOk {
+		if err != EmmcOk {
 			return err
+		}
+		if readerDebug {
+			trust.Debugf("getMoreData: next cluster is %d", c)
 		}
 		f.cluster = c
 	}
 	if !f.endOfClusterChain() {
 		//fetch the next page
-		var err error
+		var err EmmcError
 		snum := f.partition.clusterNumberToSector(1 /*xxx*/, f.cluster)
+		if readerDebug {
+			trust.Debugf("getMoreData: Not at end of chain, so about try to load sector %d", snum)
+		}
 		f.sectorData, err = f.tranquil.PossiblyLoad(snum)
-		if err != nil {
+		if err != EmmcOk {
 			trust.Errorf("unable to read data sector: %v", err.Error())
-			return sdError
+			return err
 		}
 	} //otherwise, at end of cluster chain
-	return sdOk
+	return EmmcOk
 }
 
 const fat32Unusual0 = uint32(0xFFFFFFF0)

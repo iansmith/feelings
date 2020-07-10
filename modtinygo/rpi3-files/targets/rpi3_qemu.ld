@@ -93,4 +93,4 @@ SECTIONS
 _globals_start = _sdata;
 _globals_end = _ebss;
 _heap_start = __stack_end_core3__;
-_heap_end = _heap_start + 0x200000; /* 2Mb*/
+_heap_end = _heap_start + 0x800000; /* 8Mb*/

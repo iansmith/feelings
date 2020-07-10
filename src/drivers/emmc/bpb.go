@@ -1,8 +1,9 @@
-package main
+package emmc
 
 import (
 	"bytes"
 	"encoding/binary"
+
 	"lib/trust"
 )
 

@@ -1,14 +1,17 @@
-package main
+package emmc
 
 import (
 	"fmt"
 	"unsafe"
 
 	"device/arm"
-	"lib/trust"
 	"machine"
 	"runtime/volatile"
+
+	"lib/trust"
 )
+
+const emmcDriverDebug = false
 
 // adapted to go on july 4 weekend of quarantine, 2020
 
@@ -154,10 +157,6 @@ const Datactive = 1 << 2
 const Datinhibit = 1 << 1
 const Cmdinhibit = 1 << 0
 
-//send command return codes
-const Eio = 1
-const EBadArg = 2
-
 const numCommands = 64 // for assertion check, len(cmdinfo) would be much less
 var cmdinfo = map[uint32]int{
 	0:  Ixchken,
@@ -244,13 +243,11 @@ func emmcinit() int {
 	//clk = getclkrate(ClkEmmc); XXX fix me
 	if clk == 0 {
 		clk = Extfreq
-		trust.Debugf("emmc: assuming external clock %d Mhz\n", clk/1000000)
+		if emmcDriverDebug {
+			trust.Debugf("emmc: assuming external clock %d Mhz\n", clk/1000000)
+		}
 	}
 	emmc.extclk = clk
-	// trust.Debugf("emmc control %08x %08x %08x\n",
-	// 	machine.EMMC.Control0.Get(),
-	// 	machine.EMMC.Control1.Get(),
-	// 	machine.EMMC.Control2.Get())
 	machine.EMMC.Control1.SetResetHostCircuit()
 	delay(10)
 	for machine.EMMC.Control1.ResetHostCircuitIsSet() {
@@ -304,14 +301,16 @@ var everythingButDataReadOrWriteReady = ^dataReadOrWriteReady
 var everythingButDWidth4 = ^(uint32(Dwidth4))
 var everythingBufLowestByte = ^(uint32(0xFF))
 
-func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
+func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) EmmcError {
 	info, ok := cmdinfo[cmd]
 	if cmd >= numCommands && ok {
-		panic(fmt.Sprintf("command %d called but it's number is too high!", cmd))
+		return EmmcBadEMMCCommand
 	}
 	c := (cmd << Indexshift) | uint32(info)
 	//c now has all the deets
-	trust.Debugf("command after shift: %x", c)
+	if emmcDriverDebug {
+		trust.Debugf("command after shift: %x", c)
+	}
 
 	//CMD6 may be Setbuswidth or Switchfunc depending on Appcmd prefix
 	if cmd == Switchfunc && !emmc.appcmd {
@@ -334,8 +333,10 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 	}
 	// cmd inhibit
 	if machine.EMMC.DebugStatus.Get()&Cmdinhibit != 0 {
-		trust.Debugf("emmccmd: need to reset Cmdinhibit intr %x stat %x\n",
-			machine.EMMC.Interrupt.Get(), machine.EMMC.DebugStatus.Get())
+		if emmcDriverDebug {
+			trust.Debugf("emmccmd: need to reset Cmdinhibit intr %x stat %x\n",
+				machine.EMMC.Interrupt.Get(), machine.EMMC.DebugStatus.Get())
+		}
 		machine.EMMC.Control1.SetResetCommand()
 		for machine.EMMC.DebugStatus.Get()&Cmdinhibit != 0 {
 			delay(1)
@@ -343,8 +344,10 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 	}
 	//data inhibit
 	if (machine.EMMC.DebugStatus.Get()&Datinhibit != 0) && (((c & Isdata) != 0) || ((c & Respmask) == Resp48busy)) {
-		trust.Debugf("emmccmd: need to reset Datinhibit intr %x stat %x\n",
-			machine.EMMC.Interrupt.Get(), machine.EMMC.DebugStatus.Get())
+		if emmcDriverDebug {
+			trust.Debugf("emmccmd: need to reset Datinhibit intr %x stat %x\n",
+				machine.EMMC.Interrupt.Get(), machine.EMMC.DebugStatus.Get())
+		}
 		machine.EMMC.Control1.SetResetData()
 		for machine.EMMC.Control1.ResetDataIsSet() {
 			delay(1)
@@ -357,14 +360,16 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 	machine.EMMC.Argument.Set(arg)
 	i := machine.EMMC.Interrupt.Get() & 0xffffff //top byte is not used but has crap in it
 	if i&everythingButCardIntr != 0 {
-		if i != Cardinsert {
+		if i != Cardinsert && emmcDriverDebug {
 			trust.Debugf("emmc: before command, intr was %x, clearning prior interrupt\n", i)
 		}
 		machine.EMMC.Interrupt.Set(i)
 	}
 	machine.EMMC.CommandTransferMode.Set(c)
 	now := machine.SystemTime()
-	trust.Debugf("setting command %x with arg %x (ticks=%d)", c, arg, now)
+	if emmcDriverDebug {
+		trust.Debugf("setting command %x with arg %x (ticks=%d)", c, arg, now)
+	}
 	//wait to see if we get a cmddone or err
 	for {
 		i = machine.EMMC.Interrupt.Get()
@@ -374,15 +379,21 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 		if machine.SystemTime()-now > HZ { //wait 1 sec?
 			break
 		}
-		trust.Debugf("waiting on cmd: %d", machine.SystemTime()-now)
+		if emmcDriverDebug {
+			trust.Debugf("waiting on cmd: %d", machine.SystemTime()-now)
+		}
 	}
-	trust.Debugf("waited for interrupt response to command: done=%x (err=%x)", i&commandDoneOrError, i&Err)
+	if emmcDriverDebug {
+		trust.Debugf("waited for interrupt response to command: done=%x (err=%x)", i&commandDoneOrError, i&Err)
+	}
 
 	//are we done?
 	if i&commandDoneOrError != Cmddone {
 		if i&everythingButCommandDoneOrError != Ctoerr {
-			trust.Debugf("emmc: cmd %x arg %x error intr %x stat %x\n",
-				c, arg, i, machine.EMMC.DebugStatus.Get())
+			if emmcDriverDebug {
+				trust.Debugf("emmc: cmd %x arg %x error intr %x stat %x\n",
+					c, arg, i, machine.EMMC.DebugStatus.Get())
+			}
 		}
 		machine.EMMC.Interrupt.Set(i) //clears the interrupt
 		if machine.EMMC.DebugStatus.Get()&Cmdinhibit != 0 {
@@ -391,13 +402,15 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 				delay(1)
 			}
 		}
-		return Eio
+		return EmmcIO
 	}
 	if resp == nil {
 		trust.Errorf("response required, but no response buffer provided!")
-		return EBadArg
+		return EmmcNoResponseBuffer
 	}
-	trust.Debugf("CMD Ok! (%d)", i&commandDoneOrError)
+	if emmcDriverDebug {
+		trust.Debugf("CMD Ok! (%d)", i&commandDoneOrError)
+	}
 
 	//clear anything that is NOT data related
 	machine.EMMC.Interrupt.Set(i & everythingButDataReadOrWriteReady)
@@ -406,7 +419,7 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 	case Resp136:
 		if resp == nil {
 			trust.Errorf("136bit response required, but no response buffer provided!")
-			return EBadArg
+			return EmmcBadArg
 		}
 		resp[0] = machine.EMMC.Response0.Get() << 8
 		resp[1] = machine.EMMC.Response0.Get()>>24 | machine.EMMC.Response1.Get()<<8
@@ -415,7 +428,7 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 	case Resp48, Resp48busy:
 		if resp == nil {
 			trust.Errorf("response required, but no response buffer provided!")
-			return EBadArg
+			return EmmcBadArg
 		}
 		resp[0] = machine.EMMC.Response0.Get()
 	case Respnone:
@@ -434,12 +447,12 @@ func emmccmd(cmd uint32, arg uint32, resp *[4]uint32) int {
 		i := machine.EMMC.Interrupt.Get()
 		if i&Datadone == 0 {
 			trust.Errorf("emmcio: no datadone after CMD %d", cmd)
-			return sdError
+			return EmmcNoDataDone
 		}
 		if i&Err != 0 {
 			trust.Errorf("emmcio: command %d error interrupt %x", cmd,
 				machine.EMMC.Interrupt.Get()&0xffffff)
-			return sdError
+			return EmmcIO
 		}
 		//clear interrupts
 		machine.EMMC.Interrupt.Set(i)
@@ -488,7 +501,6 @@ func emmciosetup(buf unsafe.Pointer, bsize uint32, bcount uint32) {
 
 // predicate to wait on
 func dataDone() bool {
-	trust.Debugf("xxxx data done xxxx %x", machine.EMMC.Interrupt.Get()&dataDoneOrError)
 	return machine.EMMC.Interrupt.Get()&dataDoneOrError != 0
 }
 
@@ -511,29 +523,37 @@ func mmcinterruptReceived() {
 // it is in the "standby" state and we need to do various things to get
 // it ready for data transfer state as well as running at a higher
 // clockspeed.
-func sdfullinit() int {
-	trust.Debugf("--- SEND IF COND --- ")
+func sdfullinit() EmmcError {
+	if emmcDriverDebug {
+		trust.Debugf("--- SEND IF COND --- ")
+	}
 	var resp [4]uint32
-	if err := emmccmd(SendIfCond, 0x00000142, &resp); err != sdOk {
+	if err := emmccmd(SendIfCond, 0x00000142, &resp); err != EmmcOk {
 		trust.Errorf("failed to issue SEND_IF_COND (for voltage)")
 		machine.Abort()
 	}
 	delay(3)
-	trust.Debugf("--- APP CMD --- : %+v", resp)
+	if emmcDriverDebug {
+		trust.Debugf("--- APP CMD --- : %+v", resp)
+	}
 	ok := false
 loop:
 	for j := 0; j < 10 && !ok; j++ {
 		err := emmccmd(Appcmd, 0, &resp)
-		if err != sdOk {
+		if err != EmmcOk {
 			trust.Errorf("failed to issue APP CMD, but will retry")
 		}
-		trust.Debugf("APP CMD result (%v): %+v", err == sdOk, resp)
+		if emmcDriverDebug {
+			trust.Debugf("APP CMD result (%v): %+v", err == EmmcOk, resp)
+		}
 		if resp[1] != 0 {
 			delay(10)
 			goto loop
 		}
-		trust.Debugf("------ OP COND ---- : %+v", resp)
-		if err := emmccmd(OpCond, 0x40300000, &resp); err != sdOk {
+		if emmcDriverDebug {
+			trust.Debugf("------ OP COND ---- : %+v", resp)
+		}
+		if err := emmccmd(OpCond, 0x40300000, &resp); err != EmmcOk {
 			trust.Errorf("failed to issue OP COND")
 			delay(10)
 			goto loop
@@ -542,50 +562,64 @@ loop:
 	}
 	if !ok {
 		trust.Errorf("Unable to get the APP CMD + OP COND to initialize")
-		return sdTimeout
+		return EmmcOpCondTimeout
 	}
-	trust.Debugf("---- SEND ALL CID---- : %+v", resp)
-	if err := emmccmd(SendAllCID, 0, &resp); err != sdOk {
+	if emmcDriverDebug {
+		trust.Debugf("---- SEND ALL CID---- : %+v", resp)
+	}
+	if err := emmccmd(SendAllCID, 0, &resp); err != EmmcOk {
 		trust.Errorf("failed to issue SENDALLCID")
-		return sdError
+		return EmmcFailedCID
 	}
 	delay(10)
-	trust.Debugf(" --> %+x", resp)
-	trust.Debugf("---- SEND RELATIVE ADDR 1---- : %+v", resp)
-	if err := emmccmd(SendRelativeAddr, 0, &resp); err != sdOk {
+	if emmcDriverDebug {
+		trust.Debugf("---- SEND RELATIVE ADDR 1---- : %+v", resp)
+	}
+	if err := emmccmd(SendRelativeAddr, 0, &resp); err != EmmcOk {
 		trust.Errorf("failed to issue SEND RELATIVE ADDR")
-		return sdError
+		return EmmcFailedRelativeAddr
 	}
 	delay(10)
-	trust.Debugf("---- SEND RELATIVE ADDR 2---- : %+v", resp)
-	if err := emmccmd(SendRelativeAddr, 0, &resp); err != sdOk {
+	if emmcDriverDebug {
+		trust.Debugf("---- SEND RELATIVE ADDR 2---- : %+v", resp)
+	}
+	if err := emmccmd(SendRelativeAddr, 0, &resp); err != EmmcOk {
 		trust.Errorf("failed to issue SEND RELATIVE ADDR")
-		return sdError
+		return EmmcFailedRelativeAddr
 	}
 	rca := resp[0] >> 16
-	trust.Debugf("--> RCA: %x", rca)
+	if emmcDriverDebug {
+		trust.Debugf("--> RCA: %x", rca)
+	}
 	delay(10)
 
-	trust.Debugf("---- SEND CSD (with RCA) ---- : %+v", resp)
-	if err := emmccmd(SendCSD, rca<<16, &resp); err != sdOk {
+	if emmcDriverDebug {
+		trust.Debugf("---- SEND CSD (with RCA) ---- : %+v", resp)
+	}
+	if err := emmccmd(SendCSD, rca<<16, &resp); err != EmmcOk {
 		trust.Errorf("failed to issue SEND CSD")
-		return sdError
+		return EmmcFailedCSD
 	}
-	trust.Debugf("--> CSD: %+x", resp)
+	if emmcDriverDebug {
+		trust.Debugf("--> CSD: %+x", resp)
+	}
 	delay(10)
-
-	trust.Debugf("---- SELECT CARD---- : %+v", resp)
-	if err := emmccmd(SelectCard, rca<<16, &resp); err != sdOk {
+	if emmcDriverDebug {
+		trust.Debugf("---- SELECT CARD---- : %+v", resp)
+	}
+	if err := emmccmd(SelectCard, rca<<16, &resp); err != EmmcOk {
 		trust.Errorf("failed to issue SELECT CARD")
-		return sdError
+		return EmmcFailedSelectCard
 	}
 	delay(10)
-	trust.Debugf("---- SET BLOCKLEN ---- : %+v", resp)
-	if err := emmccmd(SetBlockLen, sectorSize, &resp); err != sdOk {
+	if emmcDriverDebug {
+		trust.Debugf("---- SET BLOCKLEN ---- : %+v", resp)
+	}
+	if err := emmccmd(SetBlockLen, sectorSize, &resp); err != EmmcOk {
 		trust.Errorf("failed to issue SET BLOCKLEN")
-		return sdError
+		return EmmcFailedSetBlockLen
 	}
 	delay(10)
 	machine.EMMC.BlockSizeAndCount.SetBlkSize(sectorSize)
-	return sdOk
+	return EmmcOk
 }

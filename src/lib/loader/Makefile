@@ -1,4 +1,4 @@
-all: clean sdcard sdcard.hardware
+all: clean loader loader.hardware
 
 ifndef FEELINGS
 $(error FEELINGS variable is not set, see enable-feelings.sample)
@@ -13,7 +13,7 @@ ifndef HOSTGO
 $(error HOSTGO variable is not set, see enable-feelings.sample)
 endif
 
-NAME=sdcard
+NAME=loader
 TINYGO_CLANG=$(LLVM)/bin/clang
 TINYGO_OBJCOPY=$(LLVM)/bin/llvm-objcopy
 TINYGO_LLD=$(LLVM)/bin/ld.lld
@@ -38,11 +38,8 @@ $(NAME).hardware: *.go $(BOOTASM).o
 clean:
 	rm $(NAME) $(NAME).hardware kernel8.img *.o >/dev/null 2>/dev/null || true
 
-kernel8.img: sdcard
-	$(TINYGO_OBJCOPY) -O binary $(NAME) kernel8.img
-
 run:
-	$(TOOLS)/bin/qemu-system-aarch64 -M raspi3 -kernel sdcard \
+	$(TOOLS)/bin/qemu-system-aarch64 -M raspi3 -kernel $(NAME) \
 	-serial null -serial stdio \
 	-chardev pty,id=char1 \
 	-semihosting -semihosting-config enable=on,target=native \
@@ -54,7 +51,7 @@ run:
 debug:
 	$(TOOLS)/bin/qemu-system-aarch64  \
 		-M raspi3 -S -s \
-		-kernel sdcard \
+		-kernel $(NAME) \
 		-semihosting -semihosting-config enable=on,target=native \
 		-drive file=$(IMAGEFILE),if=sd,format=raw \
 		-serial null -serial stdio

@@ -1,10 +1,9 @@
-package main
+package emmc
 
 import (
 	"bytes"
 	"encoding/binary"
 	"io"
-	"log"
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
@@ -36,6 +35,7 @@ const directoryEntryDeleted = 0xE5
 const directoryEntryLFN = 0xF
 const attributeSubdirectory = 0x10
 const sectorSize = 0x200
+const dumpFatInfo = false
 
 // these two are windows NT specific
 //const lowercaseName = 0x10
@@ -96,61 +96,61 @@ func strlenWithTerminator(p []uint8, terminator uint8) int {
 // so that we know where our FAT file system starts, and
 // read that volume's BIOS Parameter Block
 //
-func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in setup by Init
+func fatGetPartition(buffer []uint8) (*sdCardInfo, EmmcError) { //xxx should be passed in setup by Init
 	sdCard := sdCardInfo{
 		activePartition: &fatPartition{},
 	}
-	read, buffer := sdReadblock(0, 1)
-	if read == 0 {
-		return nil
+	_, buffer, err := sdReadblock(0, 1)
+	if err != EmmcOk {
+		return nil, err
 	}
 	//we need to check and see if boot sector...
 	bpb := biosParamBlockShared{}
 	if !bpb.unpack(buffer) {
-		return nil
+		return nil, EmmcBadBIOSParamBlock
 	}
 	if bpb.jump[0] != 0xE9 && bpb.jump[0] != 0xEB {
 		mbrData := bytes.NewBuffer(buffer)
 		var mbr mbrInfo
 		if err := binary.Read(mbrData, binary.LittleEndian, &mbr); err != nil {
 			trust.Errorf("unable to read MBR: %v ", err.Error())
-			return nil
+			return nil, EmmcBadMBR
 		}
 		if mbr.Signature != 0xaa55 {
 			trust.Errorf("bad magic number in MBR (%x)", mbr.Signature)
-			return nil
+			return nil, EmmcNoMBRSignature
 		}
 		if err := unpackPartitionBuffer(buffer, mbrUnusedSize, 0, sizeOfPackedPartitionInfo, &mbr.Partition1); err != nil {
-			return nil
+			return nil, EmmcBadPartitions
 		}
 		if err := unpackPartitionBuffer(buffer, mbrUnusedSize, sizeOfPackedPartitionInfo, 2*sizeOfPackedPartitionInfo, &mbr.Partition2); err != nil {
-			return nil
+			return nil, EmmcBadPartitions
 		}
 		if err := unpackPartitionBuffer(buffer, mbrUnusedSize, sizeOfPackedPartitionInfo*2, 3*sizeOfPackedPartitionInfo, &mbr.Partition3); err != nil {
-			return nil
+			return nil, EmmcBadPartitions
 		}
 		if err := unpackPartitionBuffer(buffer, mbrUnusedSize, sizeOfPackedPartitionInfo*3, 4*sizeOfPackedPartitionInfo, &mbr.Partition4); err != nil {
-			return nil
+			return nil, EmmcBadPartitions
 		}
-		log.Printf("read MBR: %+v", mbr)
-		log.Printf("active partiton: %+v", mbr.Partition1)
-		log.Printf(
-			"dead partiton: %+v", mbr.Partition2)
+		// log.Printf("read MBR: %+v", mbr)
+		// log.Printf("active partiton: %+v", mbr.Partition1)
+		// log.Printf(
+		// 	"dead partiton: %+v", mbr.Partition2)
 		//deeply dubious xxx
 		first := uint32(mbr.Partition1.FirstSector) // FAT16 needs this value so hold it
 		sdCard.activePartition.unusedSectors = first
 		//try again for BPB at firstDataSector
-		read, buffer = sdReadblock(mbr.Partition1.FirstSector, 1)
-		if read == 0 {
-			return nil
+		_, buffer, err = sdReadblock(mbr.Partition1.FirstSector, 1)
+		if err != EmmcOk {
+			return nil, err
 		}
 		bpb = biosParamBlockShared{}
 		if !bpb.unpack(buffer) {
-			return nil
+			return nil, EmmcBadBIOSParamBlock
 		}
 		if bpb.jump[0] != 0xE9 && bpb.jump[0] != 0xEB {
 			trust.Errorf("did not find a BIOS Parameter Block")
-			return nil
+			return nil, EmmcBadBIOSParamBlock
 		}
 	}
 	// we have only read the shared part, so read extension as appropriate
@@ -159,12 +159,12 @@ func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in set
 	if bpb.Spf16 > 0 && bpb.NumRootEntries > 0 {
 		ext16 := &biosParamBlockFat16Extension{}
 		if ext16.unpack(buffer[sizeOfPackedBpbShared:]) {
-			return nil
+			return nil, EmmcBadBIOSParamBlock
 		}
 	} else {
 		ext32 = &biosParamBlockFat32Extension{}
 		if !ext32.unpack(buffer[sizeOfPackedBpbShared:]) {
-			return nil
+			return nil, EmmcBadBIOSParamBlock
 		}
 	}
 	bpbFull := newBIOSParamBlock(&bpb, ext16, ext32)
@@ -176,24 +176,30 @@ func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in set
 		sdCard.activePartition.rootCluster = clusterNumber(bpbFull.fat32.RootCluster) // Hold partition root cluster
 		raw := uint32(bpbFull.Rsc) + bpbFull.Hs + sdCard.activePartition.unusedSectors
 		sdCard.activePartition.fatOrigin = sectorNumber(raw)
-		trust.Infof("FAT32 Partition Info FAT Origin : 0x%x ", sdCard.activePartition.fatOrigin)
+		if dumpFatInfo {
+			trust.Infof("FAT32 Partition Info FAT Origin : 0x%x ", sdCard.activePartition.fatOrigin)
+		}
 		sdCard.activePartition.dataSectors = bpbFull.Ts32 - uint32(bpbFull.Rsc) - (bpbFull.fat32.FATSize32 * uint32(bpbFull.Nf))
 		//sdCard.partition.dataSectors = bpb->TotalSectors32 - bpb->ReservedSectorCount - (bpb->FSTypeData.fat32.FATSize32 * bpb->NumFATs);
-		trust.Infof("FAT32 Partition Info Total Sectors : 0x%x ", bpbFull.Ts32)
-		trust.Infof("FAT32 Partition Info Data Sectors : 0x%x", sdCard.activePartition.dataSectors)
+		if dumpFatInfo {
+			trust.Infof("FAT32 Partition Info Total Sectors : 0x%x ", bpbFull.Ts32)
+			trust.Infof("FAT32 Partition Info Data Sectors : 0x%x", sdCard.activePartition.dataSectors)
+		}
 		if bpbFull.fat32.BootSig != 0x29 {
 			trust.Errorf("FAT32 volume has bad boot signature: %v", uint32(bpbFull.fat32.BootSig))
-			return nil
+			return nil, EmmcBadFAT32BootSignature
 		}
-		trust.Infof("FAT32 Volume Label: '%s', ID: 0x%08x\n",
-			string(bpbFull.fat32.volumeLabel[:]), bpbFull.fat32.VolumeID) //xxx because of problem in tinyo reflection with bpbfull
+		if dumpFatInfo {
+			trust.Infof("FAT32 Volume Label: '%s', ID: 0x%08x\n",
+				string(bpbFull.fat32.volumeLabel[:]), bpbFull.fat32.VolumeID) //xxx because of problem in tinyo reflection with bpbfull
+		}
 		sdCard.activePartition.fatSize = uint32(bpbFull.Nf) * bpbFull.fat32.FATSize32
 		trust.Infof("full active part info: %#v", sdCard.activePartition)
 
 		if bpbFull.fat32.fileSystemType[0] != 'F' ||
 			bpbFull.fat32.fileSystemType[1] != 'A' ||
 			bpbFull.fat32.fileSystemType[2] != 'T' {
-			trust.Errorf("Wrong filesystem type (not FAT)")
+			return nil, EmmcBadFAT32FilesystemType
 		}
 	} else {
 		// FAT16
@@ -208,18 +214,18 @@ func fatGetPartition(buffer []uint8) *sdCardInfo { //xxx should be passed in set
 			bpbFull.fat16.volumeLabel, bpbFull.fat16.VolumeID)
 		if bpbFull.fat16.BootSig != 0x29 {
 			trust.Errorf("FAT16 volume has bad boot signature:  %x", uint32(bpbFull.fat16.BootSig))
-			return nil
+			return nil, EmmcBadFAT16BootSignature
 		}
 		if bpbFull.fat16.fileSystemType[0] != 'F' ||
 			bpbFull.fat16.fileSystemType[1] != 'A' ||
 			bpbFull.fat16.fileSystemType[2] != 'T' {
 			trust.Errorf("Wrong filesystem type (not FAT)")
-			return nil
+			return nil, EmmcBadFAT16FilesystemType
 		}
 		sdCard.activePartition.fatSize = uint32(bpbFull.Nf) * uint32(bpbFull.Spf16)
 		sdCard.activePartition.isFAT16 = true
 	}
-	return &sdCard
+	return &sdCard, EmmcOk
 }
 
 func (f *fatPartition) clusterNumberToSector(numFats uint32, c clusterNumber) sectorNumber {
@@ -391,38 +397,35 @@ func (f *FAT32Filesystem) NewInode() inodeNumber {
 
 // ReadDir returns a list of dirents into the already allocated structure given by
 // it's parameter.   Path should already have been cleaned.
-func (f *FAT32Filesystem) ReadDir(path string, entries []*DirEnt) *PosixError {
+func (f *FAT32Filesystem) ReadDir(path string, entries []*DirEnt) EmmcError {
 	panic("not implemented")
 }
 
 // OpenDir returns a directory pointer that you can then call ReadDir on, or it returns null.
-func (f *FAT32Filesystem) openRootDir() (*Dir, *PosixError) {
-	trust.Infof("open root dir rootCluster=%d=>%d",
-		f.sdcard.activePartition.rootCluster,
-		f.sdcard.activePartition.clusterNumberToSector(1 /*xxx*/, f.sdcard.activePartition.rootCluster))
+func (f *FAT32Filesystem) openRootDir() (*Dir, EmmcError) {
 	return f.readDirFromCluster("/", f.sdcard.activePartition.rootCluster)
 }
 
-func (f *FAT32Filesystem) Open(path string) (io.Reader, *PosixError) {
+func (f *FAT32Filesystem) Open(path string) (*fatDataReader, EmmcError) {
 	trust.Infof("open %s: trying to resolve path", path)
 	entry, err := f.resolvePath(path, true)
-	if err != nil {
+	if err != EmmcOk {
 		return nil, err
 	}
-	trust.Infof("opening %s: %x,%x (%x)", path, uint32(entry.firstClusterHi),
+	trust.Infof("opening %s: %x,%x (start cluster %x)", path, uint32(entry.firstClusterHi),
 		uint32(entry.firstClusterLo),
 		uint32(entry.firstClusterHi)*256+uint32(entry.firstClusterLo))
 	raw := uint32(entry.firstClusterHi)*256 + uint32(entry.firstClusterLo)
 	cnum := clusterNumber(raw)
-	reader := newFATDataReader(cnum, f.sdcard.activePartition, f.tranq, entry.Size)
+	reader, err := newFATDataReader(cnum, f.sdcard.activePartition, f.tranq, entry.Size)
 	if reader == nil {
 		trust.Errorf("unable to create new FATDataReader! need better error\n")
-		return nil, EUnknown // xxxx errors.New("should be the correct error here")
+		return nil, err
 	}
-	return reader, nil
+	return reader, EmmcOk
 }
 
-func (f *FAT32Filesystem) openDirFromEntry(entry *DirEnt) (*Dir, *PosixError) {
+func (f *FAT32Filesystem) openDirFromEntry(entry *DirEnt) (*Dir, EmmcError) {
 	trust.Debugf("openDirFromEntry %s", entry.Name)
 	path := filepath.Clean(entry.Path)
 	raw := uint32(entry.firstClusterHi)*256 + uint32(entry.firstClusterLo)
@@ -430,25 +433,25 @@ func (f *FAT32Filesystem) openDirFromEntry(entry *DirEnt) (*Dir, *PosixError) {
 	return f.readDirFromCluster(path, cnum)
 }
 
-func (f *FAT32Filesystem) resolvePath(path string, isLast bool) (*DirEnt, *PosixError) {
+func (f *FAT32Filesystem) resolvePath(path string, isLast bool) (*DirEnt, EmmcError) {
 	path = filepath.Clean(path)
 	dirPath, file := filepath.Split(path)
 	var dir *Dir
-	var err *PosixError
+	var err EmmcError
 	var entry *DirEnt
 
 	if dirPath == "/" {
 		dir, err = f.openRootDir()
-		if err != nil {
+		if err != EmmcOk {
 			return nil, err
 		}
 	} else {
 		entry, err = f.resolvePath(dirPath, false)
-		if err != nil {
+		if err != EmmcOk {
 			return nil, err
 		}
 		dir, err = f.openDirFromEntry(entry)
-		if err != nil {
+		if err != EmmcOk {
 			return nil, err
 		}
 	}
@@ -457,25 +460,28 @@ func (f *FAT32Filesystem) resolvePath(path string, isLast bool) (*DirEnt, *Posix
 		entryName := strings.ToUpper(e.Name)
 		if entryName == file {
 			if !isLast && !e.IsDir {
-				return nil, ENoEnt
+				return nil, EmmcNotFile
 			}
-			return &e, nil
+			return &e, EmmcOk
 		}
 	}
-	return nil, ENoEnt
+	return nil, EmmcNoEnt
 }
 
-func (f *FAT32Filesystem) readDirFromCluster(path string, cnum clusterNumber) (*Dir, *PosixError) {
+func (f *FAT32Filesystem) readDirFromCluster(path string, cnum clusterNumber) (*Dir, EmmcError) {
 	entries := 0
 	buf := make([]byte, directoryEntrySize)
 	lfnSeq := ""
-	var err error
+	var err EmmcError
 	var r int
 	lfnSeqCurr := 0 //lfn's numbered from 1
 	var raw rawDirEnt
 	trust.Infof("readDirFromCluster: %s,%d", path, cnum)
 	snum := f.sdcard.activePartition.clusterNumberToSector(1 /*xxx*/, cnum)
-	fr := newFATDataReader(cnum, f.sdcard.activePartition, f.tranq, 0) //get root directory
+	fr, err := newFATDataReader(cnum, f.sdcard.activePartition, f.tranq, 0) //get root directory
+	if err != EmmcOk {
+		return nil, err
+	}
 	result := NewDir(f, path, snum, 32)
 outer:
 	for {
@@ -486,8 +492,7 @@ outer:
 			if err == io.EOF {
 				break outer
 			}
-			if err != nil {
-				trust.Errorf("unknown error caught: %v", err.Error())
+			if err != EmmcOk {
 				break outer
 			}
 			curr += r
@@ -536,10 +541,12 @@ outer:
 		}
 	}
 	if err == io.EOF {
-		trust.Warnf("finished reading all the directory entries, but shouldn't we have gotten a directory end entry?")
+		trust.Warnf("finished reading all the directory entries, " +
+			" but shouldn't we have gotten a directory end entry?")
 	}
-	if err != nil {
-		return nil, EUnknown
+	if err != EmmcOk {
+		return nil, EmmcUnknown
 	}
-	return result, nil
+	return result, EmmcOk
+
 }
