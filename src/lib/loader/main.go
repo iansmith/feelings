@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 
 	"machine"
 
@@ -21,8 +22,8 @@ func main() {
 	dumpFileText("/common-auth")
 	dumpFileText("/sources.list")
 	dumpFileText("/lsb-release")
+	dumpFileText("/resolve.conf")
 	dumpFileText("/reslove.conf")
-	dumpFileText("/resloveit.conf")
 	dumpFileText("/README")
 	emmc.Impl.WindUp()
 	machine.Abort()
@@ -30,8 +31,8 @@ func main() {
 
 func dumpFileText(path string) {
 	rd, err := emmc.Impl.Open(path)
-	if err != emmc.EmmcOk {
-		trust.Errorf("!!! can't open /hostname: %s", err)
+	if err != nil {
+		trust.Errorf("!!! can't open '%s': %s", path, err)
 		return
 	}
 	fmt.Printf("---------\n%s\n---------\n", path)
@@ -39,16 +40,18 @@ func dumpFileText(path string) {
 	var buff bytes.Buffer
 	for {
 		n, err := rd.Read(data)
-		if err == emmc.EmmcEOF {
-			trust.Debugf("got EOF! with n %d", n)
+		if err == io.EOF {
+			if n != 0 {
+				trust.Debugf("got EOF! but with unexpected value of n: %d", n)
+			}
 			break
 		}
-		if err != emmc.EmmcOk {
+		if err != nil {
 			trust.Errorf("error reading from file: %s", err)
 			machine.Abort()
 		}
 		buff.Write(data[:n])
 	}
 	fmt.Printf(buff.String() + "\n")
-	rd.Close()
+	rd.(emmc.EmmcFile).Close()
 }

@@ -1,21 +1,33 @@
 package emmc
 
 import (
-	"unsafe"
+	"io"
+	"machine"
+	"time"
 
 	"lib/trust"
+
+	"unsafe"
 )
+
+type EmmcFileInfo interface {
+	Name() string
+	Size() int64
+	ModTime() time.Time
+	IsDir() bool
+}
 
 type EmmcError int32
 
 type EmmcFile interface {
-	Read(b []byte) (int, EmmcError)
+	Read(b []byte) (int, error)
 	Close()
 }
 
 type Emmc interface {
 	Init() int
-	Open(filename string) (EmmcFile, EmmcError)
+	Open(filename string) (EmmcFile, error)
+	ReadDir(path string) ([]EmmcFileInfo, error)
 	WindUp() EmmcError
 }
 
@@ -56,7 +68,8 @@ const (
 	EmmcNoBuffer               EmmcError = -31
 	EmmcAlreadyClosed          EmmcError = -32
 	EmmcFailedReadIntoCache    EmmcError = -33
-	EmmcUnknown                EmmcError = -34
+	EmmcNotDirectory           EmmcError = -34
+	EmmcUnknown                EmmcError = -35
 )
 
 func (e EmmcError) Error() string {
@@ -134,6 +147,8 @@ func (e EmmcError) String() string {
 	case -33:
 		return "EmmcFailedReadIntoCache"
 	case -34:
+		return "EmmcNotDirectory"
+	case -35:
 		return "EmmcUknown"
 	}
 	return "BadEmmcErrorValue"
@@ -181,24 +196,36 @@ func (e *emmcImpl) WindUp() {
 		trust.Errorf("unable to shutdown: %d", err)
 	}
 }
+func (e *emmcImpl) ReadDir(path string) ([]*dirEnt, error) {
+	trust.Errorf("read dir called with %s... not implemented\n", path)
+	machine.Abort()
+	return nil, nil
+}
 
-func (e *emmcImpl) Open(path string) (EmmcFile, EmmcError) {
+func (e *emmcImpl) Open(path string) (io.Reader, error) {
 	fr, err := e.fs.Open(path)
 	if err != EmmcOk {
 		return nil, err
 	}
-	return &emmcFileImpl{fr}, EmmcOk
+	return &emmcFileImpl{fr}, nil
 }
 
 type emmcFileImpl struct {
 	fr *fatDataReader
 }
 
-func (e *emmcFileImpl) Read(buf []byte) (int, EmmcError) {
+func (e *emmcFileImpl) Read(buf []byte) (int, error) {
 	if e.fr == nil {
 		return 0, EmmcAlreadyClosed
 	}
-	return e.fr.Read(buf)
+	n, tmp := e.fr.Read(buf)
+	if tmp == EmmcEOF {
+		return n, io.EOF
+	}
+	if tmp == EmmcOk {
+		return n, nil
+	}
+	return n, tmp
 }
 func (e *emmcFileImpl) Close() {
 	e.fr = nil

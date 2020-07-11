@@ -101,27 +101,40 @@ type Dir struct {
 	sector   sectorNumber
 	inode    inodeNumber
 	path     string
-	contents []DirEnt
+	contents []dirEnt
 }
 
-type DirEnt struct {
-	Name           string
-	LastWrite      time.Time
+type dirEnt struct {
+	name           string
+	lastWrite      time.Time
 	LastAccess     time.Time
 	Create         time.Time
-	IsDir          bool
-	Size           uint32
+	isDir          bool
+	size           uint32
 	Path           string
 	Inode          inodeNumber
 	firstClusterLo uint16
 	firstClusterHi uint16
 }
 
+func (d *dirEnt) Name() string {
+	return d.name
+}
+func (d *dirEnt) Size() uint64 {
+	return uint64(d.size)
+}
+func (d *dirEnt) ModTime() time.Time {
+	return d.lastWrite
+}
+func (d *dirEnt) IsDir() bool {
+	return d.isDir
+}
+
 func NewDir(fs *FAT32Filesystem, path string, sector sectorNumber, sizeHint int) *Dir {
 	result := &Dir{
 		fs:       fs,
 		sector:   sector,
-		contents: make([]DirEnt, 0, sizeHint),
+		contents: make([]dirEnt, 0, sizeHint),
 		path:     path,
 	}
 	inode, ok := fs.inodeMap[path]
@@ -136,7 +149,7 @@ func NewDir(fs *FAT32Filesystem, path string, sector sectorNumber, sizeHint int)
 func (d *Dir) addEntry(longName string, raw *rawDirEnt) {
 	if len(d.contents) == cap(d.contents) {
 		//ugh, copy
-		tmp := make([]DirEnt, 0, cap(d.contents)*2)
+		tmp := make([]dirEnt, 0, cap(d.contents)*2)
 		tmp = append(tmp, d.contents...)
 		d.contents = tmp
 	}
@@ -168,12 +181,12 @@ func (d *Dir) addEntry(longName string, raw *rawDirEnt) {
 		isDir = true
 	}
 
-	entry := DirEnt{
-		Name:           longName,
-		IsDir:          isDir,
-		Size:           raw.Size,
+	entry := dirEnt{
+		name:           longName,
+		isDir:          isDir,
+		size:           raw.Size,
 		Create:         create,
-		LastWrite:      write,
+		lastWrite:      write,
 		LastAccess:     access,
 		firstClusterLo: raw.FirstClusterLo,
 		firstClusterHi: raw.FirstClusterHi,

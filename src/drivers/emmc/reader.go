@@ -47,7 +47,7 @@ func newFATDataReader(cluster clusterNumber, partition *fatPartition,
 	return dr, EmmcOk
 }
 
-func (f *fatDataReader) Read(p []byte) (int, EmmcError) {
+func (f *fatDataReader) Read(p []byte) (int, error) {
 	if f.endOfClusterChain() { //our work here is done, already finished reading
 		return 0, EmmcEOF
 	}
@@ -115,7 +115,7 @@ func (f *fatDataReader) Read(p []byte) (int, EmmcError) {
 		}
 	}
 	//everything looks ok... this is the happy path
-	return result, EmmcOk
+	return result, nil
 returnError:
 	if isError {
 		return 0, err

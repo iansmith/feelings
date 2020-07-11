@@ -194,7 +194,13 @@ func fatGetPartition(buffer []uint8) (*sdCardInfo, EmmcError) { //xxx should be 
 				string(bpbFull.fat32.volumeLabel[:]), bpbFull.fat32.VolumeID) //xxx because of problem in tinyo reflection with bpbfull
 		}
 		sdCard.activePartition.fatSize = uint32(bpbFull.Nf) * bpbFull.fat32.FATSize32
-		trust.Infof("full active part info: %#v", sdCard.activePartition)
+		if dumpFatInfo {
+			trust.Infof("active partition: fat origin          %d", sdCard.activePartition.fatOrigin)
+			trust.Infof("active partition: fat size            %d", sdCard.activePartition.fatSize)
+			trust.Infof("active partition: root cluster        %d", sdCard.activePartition.rootCluster)
+			trust.Infof("active partition: sectors per cluster %d", sdCard.activePartition.sectorsPerCluster)
+			trust.Infof("active partition: bytes per sector    %d", sdCard.activePartition.bytesPerSector)
+		}
 
 		if bpbFull.fat32.fileSystemType[0] != 'F' ||
 			bpbFull.fat32.fileSystemType[1] != 'A' ||
@@ -395,29 +401,24 @@ func (f *FAT32Filesystem) NewInode() inodeNumber {
 	return result
 }
 
-// ReadDir returns a list of dirents into the already allocated structure given by
-// it's parameter.   Path should already have been cleaned.
-func (f *FAT32Filesystem) ReadDir(path string, entries []*DirEnt) EmmcError {
-	panic("not implemented")
-}
-
 // OpenDir returns a directory pointer that you can then call ReadDir on, or it returns null.
 func (f *FAT32Filesystem) openRootDir() (*Dir, EmmcError) {
+	trust.Debugf("openRootDir")
 	return f.readDirFromCluster("/", f.sdcard.activePartition.rootCluster)
 }
 
 func (f *FAT32Filesystem) Open(path string) (*fatDataReader, EmmcError) {
-	trust.Infof("open %s: trying to resolve path", path)
+	trust.Infof("open file %s: trying to resolve path", path)
 	entry, err := f.resolvePath(path, true)
 	if err != EmmcOk {
 		return nil, err
 	}
-	trust.Infof("opening %s: %x,%x (start cluster %x)", path, uint32(entry.firstClusterHi),
+	trust.Infof("opening %s: %x,%x (start cluster => %x)", path, uint32(entry.firstClusterHi),
 		uint32(entry.firstClusterLo),
 		uint32(entry.firstClusterHi)*256+uint32(entry.firstClusterLo))
 	raw := uint32(entry.firstClusterHi)*256 + uint32(entry.firstClusterLo)
 	cnum := clusterNumber(raw)
-	reader, err := newFATDataReader(cnum, f.sdcard.activePartition, f.tranq, entry.Size)
+	reader, err := newFATDataReader(cnum, f.sdcard.activePartition, f.tranq, entry.size)
 	if reader == nil {
 		trust.Errorf("unable to create new FATDataReader! need better error\n")
 		return nil, err
@@ -425,20 +426,36 @@ func (f *FAT32Filesystem) Open(path string) (*fatDataReader, EmmcError) {
 	return reader, EmmcOk
 }
 
-func (f *FAT32Filesystem) openDirFromEntry(entry *DirEnt) (*Dir, EmmcError) {
-	trust.Debugf("openDirFromEntry %s", entry.Name)
+func (f *FAT32Filesystem) OpenDir(path string) (*dirEnt, EmmcError) {
+	trust.Infof("open dir %s: trying to resolve path", path)
+	entry, err := f.resolvePath(path, true)
+	if err != EmmcOk {
+		return nil, err
+	}
+	trust.Infof("opening directory %s: %x,%x (start cluster => %x)", path, uint32(entry.firstClusterHi),
+		uint32(entry.firstClusterLo),
+		uint32(entry.firstClusterHi)*256+uint32(entry.firstClusterLo))
+	raw := uint32(entry.firstClusterHi)*256 + uint32(entry.firstClusterLo)
+	cnum := clusterNumber(raw)
+	trust.Errorf("OpenDir got directory %s, with cnum: %d", path, cnum)
+	return nil, EmmcOk
+}
+
+func (f *FAT32Filesystem) openDirFromEntry(entry *dirEnt) (*Dir, EmmcError) {
+	trust.Debugf("openDirFromEntry %s", entry.Name())
 	path := filepath.Clean(entry.Path)
 	raw := uint32(entry.firstClusterHi)*256 + uint32(entry.firstClusterLo)
 	cnum := clusterNumber(raw)
 	return f.readDirFromCluster(path, cnum)
 }
 
-func (f *FAT32Filesystem) resolvePath(path string, isLast bool) (*DirEnt, EmmcError) {
+func (f *FAT32Filesystem) resolvePath(path string, isLast bool) (*dirEnt, EmmcError) {
 	path = filepath.Clean(path)
+	trust.Debugf("resolve path entered: %s isLast=%v", path, isLast)
 	dirPath, file := filepath.Split(path)
 	var dir *Dir
 	var err EmmcError
-	var entry *DirEnt
+	var entry *dirEnt
 
 	if dirPath == "/" {
 		dir, err = f.openRootDir()
@@ -450,16 +467,18 @@ func (f *FAT32Filesystem) resolvePath(path string, isLast bool) (*DirEnt, EmmcEr
 		if err != EmmcOk {
 			return nil, err
 		}
+		trust.Debugf("resolve path: resolve path of %s finished, entry %s", dirPath, entry.name)
 		dir, err = f.openDirFromEntry(entry)
+		trust.Debugf("resolve path: openDirFromEntry %s", entry.name)
 		if err != EmmcOk {
 			return nil, err
 		}
 	}
 	file = strings.ToUpper(file)
 	for _, e := range dir.contents {
-		entryName := strings.ToUpper(e.Name)
+		entryName := strings.ToUpper(e.Name())
 		if entryName == file {
-			if !isLast && !e.IsDir {
+			if !isLast && !e.IsDir() {
 				return nil, EmmcNotFile
 			}
 			return &e, EmmcOk
@@ -469,36 +488,34 @@ func (f *FAT32Filesystem) resolvePath(path string, isLast bool) (*DirEnt, EmmcEr
 }
 
 func (f *FAT32Filesystem) readDirFromCluster(path string, cnum clusterNumber) (*Dir, EmmcError) {
+	trust.Debugf("readDirFromCluster %s", path)
 	entries := 0
 	buf := make([]byte, directoryEntrySize)
 	lfnSeq := ""
-	var err EmmcError
-	var r int
 	lfnSeqCurr := 0 //lfn's numbered from 1
 	var raw rawDirEnt
+	var err EmmcError
 	trust.Infof("readDirFromCluster: %s,%d", path, cnum)
 	snum := f.sdcard.activePartition.clusterNumberToSector(1 /*xxx*/, cnum)
-	fr, err := newFATDataReader(cnum, f.sdcard.activePartition, f.tranq, 0) //get root directory
-	if err != EmmcOk {
-		return nil, err
+	fr, errFat := newFATDataReader(cnum, f.sdcard.activePartition, f.tranq, 0) //get root directory
+	if errFat != EmmcOk {
+		return nil, errFat
 	}
 	result := NewDir(f, path, snum, 32)
 outer:
 	for {
 		curr := 0
 		for curr < directoryEntrySize {
-			//fmt.Printf("reading entry %d, byte %d\n", entries, curr)
-			r, err = fr.Read(buf[curr : directoryEntrySize-curr])
+			r, err := fr.Read(buf[curr : directoryEntrySize-curr])
 			if err == io.EOF {
 				break outer
 			}
-			if err != EmmcOk {
+			if err != nil {
 				break outer
 			}
 			curr += r
 		}
 		if ok := raw.unpack(buf); !ok {
-			trust.Errorf("unable to unpack directory: %v ", err.Error())
 			break outer
 		}
 		entries++
@@ -536,11 +553,10 @@ outer:
 			}
 			lfnSeq = ""
 			lfnSeqCurr = 0 // lfn's seqence numbers start at 1??
-
 			result.addEntry(longName, &raw)
 		}
 	}
-	if err == io.EOF {
+	if err == EmmcEOF {
 		trust.Warnf("finished reading all the directory entries, " +
 			" but shouldn't we have gotten a directory end entry?")
 	}
