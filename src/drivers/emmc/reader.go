@@ -17,22 +17,26 @@ const readerDumpSector = false
 type fatDataReader struct {
 	tranquil      bufferManager
 	cluster       clusterNumber
+	startCluster  clusterNumber
 	sector        sectorNumber
-	sectorData    unsafe.Pointer // sectorSize
-	current       uint32         // [0, sectorSize)
+	sectorData    unsafe.Pointer // sectorSize is how many bytes
+	current       uint32         // [0, sectorSize) -- where are we on this sector
 	finishedInit  bool
-	size          uint32
-	totalConsumed uint32
+	size          uint32 //size of file
+	totalConsumed uint32 //how much have we read (current offset in file)
+	clusterIndex  uint32 // what number are we currently at in the chain
 	partition     *fatPartition
 }
 
 func newFATDataReader(cluster clusterNumber, partition *fatPartition,
 	t bufferManager, size uint32) (*fatDataReader, EmmcError) {
 	dr := &fatDataReader{
-		cluster:   cluster,
-		tranquil:  t,
-		partition: partition,
-		size:      size,
+		clusterIndex: 0,
+		startCluster: cluster,
+		cluster:      cluster,
+		tranquil:     t,
+		partition:    partition,
+		size:         size,
 	}
 	if readerDebug {
 		trust.Debugf("new fat data reader: cluster=%d", cluster)
@@ -45,6 +49,58 @@ func newFATDataReader(cluster clusterNumber, partition *fatPartition,
 		return nil, EmmcBadInitialRead
 	}
 	return dr, EmmcOk
+}
+
+func (f *fatDataReader) ReadAt(p []byte, off int64) (int, error) {
+	//We are allowed to return 0, EmmcEOF by the definition if the previous
+	//read (likely) hit exactly at the end of a file
+	//https://golang.org/pkg/io/#ReaderAt
+	if f.endOfClusterChain() { // our work here is done, already finished reading
+		return 0, EmmcEOF
+	}
+	l := len(p)
+	if l == 0 {
+		return 0, EmmcNoBuffer //nothing to do because nothing to read
+	}
+
+	//
+	//deal with offset
+	//
+
+	f.totalConsumed = uint32(off) //2G files are the limit for us
+	f.current = uint32(off) % sectorSize
+
+	desiredIndex := f.totalConsumed / sectorSize
+	if desiredIndex < f.clusterIndex { //can only go forward through the chain
+		//we have to reset to zero
+		f.clusterIndex = 0
+		f.cluster = f.startCluster
+	}
+	for f.clusterIndex < desiredIndex {
+		if f.clusterIndex%100 == 0 {
+		}
+		_, err := f.getNextClusterInChain()
+		if err != EmmcOk {
+			trust.Errorf("failed trying to seek to %d: %s", off, err.String())
+			return 0, EmmcSeekFailed
+		}
+	}
+	var err EmmcError
+	f.sectorData, err = f.tranquil.PossiblyLoad(f.partition.clusterNumberToSector(1, f.cluster))
+	if err != EmmcOk {
+		return 0, err
+	}
+	// Read is dumber so we have to patch up to fill the whole buffer p
+	// because ReadAt doesn't allow a short read
+	index := 0
+	for index < len(p) {
+		n, err := f.Read(p[index:])
+		if err != nil { //this includes EOF
+			return n, err
+		}
+		index += n
+	}
+	return len(p), nil
 }
 
 func (f *fatDataReader) Read(p []byte) (int, error) {
@@ -77,6 +133,7 @@ func (f *fatDataReader) Read(p []byte) (int, error) {
 			f.current, uint32(l), f.current+uint32(l), sectorSize, f.totalConsumed)
 	}
 	if f.current+uint32(l) < sectorSize {
+		//  this is the case of reading the remainedr of the given buffer
 		base := (uintptr)(unsafe.Pointer(uintptr(f.sectorData) + uintptr(f.current)))
 		for i := 0; i < l; i++ {
 			p[i] = *((*uint8)(unsafe.Pointer(base + uintptr(i))))
@@ -85,7 +142,7 @@ func (f *fatDataReader) Read(p []byte) (int, error) {
 		f.totalConsumed += uint32(l)
 		result = l
 	} else {
-		//this is the case of reading the remainder of this page
+		// this is the case of reading the remainder of this page
 		remaining := sectorSize - f.current
 		for i := 0; i < int(remaining); i++ {
 			p[i] = *((*uint8)(unsafe.Pointer(uintptr(f.sectorData) + uintptr(f.current) + uintptr(i))))
@@ -113,6 +170,7 @@ func (f *fatDataReader) Read(p []byte) (int, error) {
 			isError = true
 			goto returnError
 		}
+		f.current = 0 //reset to the origin of the page
 	}
 	//everything looks ok... this is the happy path
 	return result, nil
@@ -185,9 +243,11 @@ func (f *fatDataReader) getNextClusterInChain() (clusterNumber, EmmcError) {
 		next = *base
 	}
 	if readerDebug {
-		trust.Debugf("getNextClusterInChain: next cluster is 0x%x", next)
+		trust.Debugf("getNextClusterInChain: next cluster is 0x%x, new value of cluster index=%d",
+			next, f.clusterIndex+1)
 	}
 
+	f.clusterIndex++
 	f.cluster = clusterNumber(next)
 	if f.partition.isFAT16 {
 		warnFAT16ChainValue(next)
@@ -214,6 +274,7 @@ func (f *fatDataReader) getMoreData() EmmcError {
 		if readerDebug {
 			trust.Debugf("getMoreData: next cluster is %d", c)
 		}
+		f.clusterIndex++
 		f.cluster = c
 	}
 	if !f.endOfClusterChain() {

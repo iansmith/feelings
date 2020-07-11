@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"debug/elf"
 	"fmt"
 	"io"
+	"log"
 
 	"machine"
 
@@ -16,15 +18,34 @@ func main() {
 		trust.Errorf("failed to init emmc card: %s", err)
 		machine.Abort()
 	}
-	dumpFileText("/foo/bar/nss")
-	dumpFileText("/foo/baz/nss")
-	dumpFileText("/hostname")
-	dumpFileText("/common-auth")
-	dumpFileText("/sources.list")
-	dumpFileText("/lsb-release")
-	dumpFileText("/resolve.conf")
-	dumpFileText("/reslove.conf")
-	dumpFileText("/README")
+
+	path := "/feelings/joy"
+	rd, err := emmc.Impl.Open(path)
+	if err != nil {
+		trust.Errorf("!!! can't open '%s': %s", path, err)
+		return
+	}
+	f, err := elf.NewFile(rd)
+	if err != nil {
+		trust.Errorf("unable to open file: %s: %v", path, err)
+		return
+	}
+	trust.Debugf("entry point: %016x", f.FileHeader.Entry)
+	for _, sect := range f.Sections {
+		log.Printf("section: %-20s  vaddr: %016x offset:%08x, size: %08x",
+			sect.Name, sect.Addr, sect.Offset, sect.Size)
+	}
+
+	// dumpFileText("/foo/bar/nss")
+	// dumpFileText("/foo/baz/nss")
+	// dumpFileText("/hostname")
+	// dumpFileText("/common-auth")
+	// dumpFileText("/sources.list")
+	// dumpFileText("/lsb-release")
+	// dumpFileText("/resolve.conf")
+	// dumpFileText("/reslove.conf")
+	// dumpFileText("/README")
+
 	emmc.Impl.WindUp()
 	machine.Abort()
 }
@@ -53,5 +74,5 @@ func dumpFileText(path string) {
 		buff.Write(data[:n])
 	}
 	fmt.Printf(buff.String() + "\n")
-	rd.(emmc.EmmcFile).Close()
+	rd.Close()
 }

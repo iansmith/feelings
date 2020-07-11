@@ -21,7 +21,8 @@ type EmmcError int32
 
 type EmmcFile interface {
 	Read(b []byte) (int, error)
-	Close()
+	ReadAt(b []byte, off int64) (int, error)
+	Close() error
 }
 
 type Emmc interface {
@@ -69,7 +70,9 @@ const (
 	EmmcAlreadyClosed          EmmcError = -32
 	EmmcFailedReadIntoCache    EmmcError = -33
 	EmmcNotDirectory           EmmcError = -34
-	EmmcUnknown                EmmcError = -35
+	EmmcUnexpectedEOF          EmmcError = -35
+	EmmcSeekFailed             EmmcError = -37
+	EmmcUnknown                EmmcError = -37
 )
 
 func (e EmmcError) Error() string {
@@ -149,6 +152,10 @@ func (e EmmcError) String() string {
 	case -34:
 		return "EmmcNotDirectory"
 	case -35:
+		return "EmmcUnexpectedEOF"
+	case -36:
+		return "EmmcSeekFailed"
+	case -37:
 		return "EmmcUknown"
 	}
 	return "BadEmmcErrorValue"
@@ -202,7 +209,7 @@ func (e *emmcImpl) ReadDir(path string) ([]*dirEnt, error) {
 	return nil, nil
 }
 
-func (e *emmcImpl) Open(path string) (io.Reader, error) {
+func (e *emmcImpl) Open(path string) (EmmcFile, error) {
 	fr, err := e.fs.Open(path)
 	if err != EmmcOk {
 		return nil, err
@@ -227,6 +234,29 @@ func (e *emmcFileImpl) Read(buf []byte) (int, error) {
 	}
 	return n, tmp
 }
-func (e *emmcFileImpl) Close() {
+
+func (e *emmcFileImpl) ReadAt(buf []byte, off int64) (int, error) {
+	if e.fr == nil {
+		return 0, EmmcAlreadyClosed
+	}
+	n, tmp := e.fr.ReadAt(buf, off)
+	//rule: if n<len(buf) then return an error about why
+	if n < len(buf) && tmp == EmmcOk {
+		trust.Errorf("ReadA: Violation of ReadAt contract! Short read, %d of %d "+
+			"with no error", n, len(buf))
+		machine.Abort()
+	}
+	if tmp == EmmcEOF {
+		return n, io.EOF
+	}
+	if tmp == EmmcOk {
+		return n, nil
+	}
+	return n, tmp
+}
+
+func (e *emmcFileImpl) Close() error {
 	e.fr = nil
+	//xxx should blow away cached pages of this file
+	return nil
 }
