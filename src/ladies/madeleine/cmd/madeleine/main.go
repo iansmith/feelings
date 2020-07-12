@@ -1,5 +1,7 @@
 package main
 
-func main() {
+import "ladies/madeleine"
 
+func main() {
+	madeleine.KernelMain()
 }

@@ -1,0 +1,9 @@
+{
+  "inherits": [
+    "rpi3_qemu"
+  ],
+  "gc": "conservative",
+  "linkerscript": "madeleine.ld",
+  "extra-files": [
+  ]
+}

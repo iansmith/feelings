@@ -1,0 +1,9 @@
+{
+  "inherits": [
+    "rpi3"
+  ],
+  "gc": "conservative",
+  "linkerscript":  "madeleine.ld",
+  "extra-files": [
+  ]
+}
