@@ -75,7 +75,7 @@ func initVideo() *trust.Logger {
 //go:extern
 var displayInfoPtr FuncPtr
 
-//go:export joy.displayInfo
+//go:export ladies/joy.displayInfo
 func displayInfo(_ uintptr) {
 	var size, base uint32
 	logger := initVideo()
@@ -147,7 +147,7 @@ func sleepForFew() {
 	}
 }
 
-//go:export joy.terminalTest
+//go:export ladies/joy.terminalTest
 func terminalTest(ptr uintptr) {
 	ct := 0
 	for {

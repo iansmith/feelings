@@ -28,7 +28,7 @@ start:
 	b kernel_main
 
 
-.globl joy.setHeapPointers
+.globl "ladies/joy.setHeapPointers"
 
 // per family heap info
 .extern _heap_start
@@ -42,8 +42,8 @@ schedule_tail:
     //mov x30, x19
     ret
 
-.globl joy.retFromFork
-joy.retFromFork:
+.globl "ladies/joy.retFromFork"
+"ladies/joy.retFromFork":
     bl    schedule_tail
     mov    x0, x20
     blr    x19

@@ -1,8 +1,9 @@
 package main
 
 import (
-	"joy"
 	"machine"
+
+	"ladies/joy"
 
 	"lib/trust"
 )

@@ -1,8 +1,8 @@
 .section ".exc", "ax", %progbits
 
 //  Set vector table for EL1 for Core0 (All others cores parked)
-.globl joy.initExceptionVector
-joy.initExceptionVector:
+.globl "ladies/joy.initExceptionVector"
+"ladies/joy.initExceptionVector":
 	ldr x0, =VectorTable
     msr vbar_el1,x0
 	ret
@@ -111,8 +111,8 @@ semihosting_call:
 
 
 .align 5
-.globl joy.cpuSwitchTo
-joy.cpuSwitchTo:
+.globl "ladies/joy.cpuSwitchTo"
+"ladies/joy.cpuSwitchTo":
 	mov	x10, x2                 // offset to RSS
 	add	x8, x0, x10
 	mov	x9, sp

@@ -89,6 +89,13 @@ func main() {
 	//setup the mini uart so you can see output over serial
 	machine.MiniUART = machine.NewUART()
 	machine.MiniUART.Configure(&machine.UARTConfig{RXInterrupt: true})
+	//this is to test to see if we need to a disk based boot
+	if canBootFromDisk(logger) {
+		bootDisk(logger)
+		logger.Errorf("Unable to boot from disk, aborting.")
+		machine.Abort()
+	}
+
 	//tell the Interrupt controlller what's going on
 	machine.IC.Enable1.SetAux()
 

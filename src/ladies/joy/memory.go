@@ -1,8 +1,8 @@
 package joy
 
 import (
+	"boot/bootloader"
 	"lib/trust"
-	"lib/upbeat"
 
 	"unsafe"
 )
@@ -81,7 +81,9 @@ func kmemInit() JoyError {
 		return err
 	}
 	ptr := uintptr(KMemAPI.ToPtr(pg))
-	for ptr+uintptr(kpageSize) < uintptr(upbeat.BootloaderParams.KernelLast) {
+	kernelLast := (uint64(bootloader.InjectedParams.KernelCodePages()) * 0x10000) +
+		bootloader.InjectedParams.KernelCodeStart - 8 //-8 so its a real addr
+	for ptr+uintptr(kpageSize) < uintptr(kernelLast) {
 		pg++
 		_, err = kmemSetInUse(pg)
 		if err != JoyNoError {
@@ -99,7 +101,10 @@ func kmemInit() JoyError {
 	}
 	bottom := (*family)(KMemAPI.ToPtr(pg))
 	ptr = uintptr(KMemAPI.ToPtr(pg))
-	for ptr+uintptr(kpageSize) < uintptr(upbeat.BootloaderParams.StackPointer) {
+	stackLast := (uint64(bootloader.InjectedParams.StackPages()) * 0x10000) +
+		bootloader.InjectedParams.StackStart - 16 //16 byte align required
+
+	for ptr+uintptr(kpageSize) < uintptr(stackLast) {
 		pg++
 		_, err = kmemSetInUse(pg)
 		if err != JoyNoError {
@@ -113,9 +118,9 @@ func kmemInit() JoyError {
 	bottom.Stack = uint64(top)
 
 	//we need setup heap
-	start := upbeat.BootloaderParams.HeapStart
-	end := upbeat.BootloaderParams.HeapEnd
-
+	start := bootloader.InjectedParams.HeapStart
+	end := (uint64(bootloader.InjectedParams.HeapPages()) * 0x10000) +
+		bootloader.InjectedParams.HeapStart - 8 //last real addr
 	trust.Infof("kmem init4")
 	pg++
 	_, err = kmemSetInUse(pg)

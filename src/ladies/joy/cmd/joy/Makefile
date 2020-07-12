@@ -23,7 +23,7 @@ TINYGO_CLANG=$(LLVM)/bin/clang
 NAME=joy
 TINYGO_CLANG=$(LLVM)/bin/clang
 TARGET=aarch64-none-elf
-GEN=../../../tools/genfuncptr/cmd/genfuncptr/genfuncptr
+GEN=../../../../tools/genfuncptr/cmd/genfuncptr/genfuncptr
 FUNCPTRS=funcptrs
 
 font.psf: $(FONTDIR)/font.psf

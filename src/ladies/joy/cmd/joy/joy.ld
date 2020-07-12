@@ -6,21 +6,25 @@ ENTRY(start)
 
 SECTIONS
 {
-	. = 0xfffffc0030000000;
-    .exc : { KEEP(*(.exc)) }
+	. = 0xfffffc0000000000;
+    .exc . : ALIGN(0x10000) { /* exception vector*/
+        KEEP(*(.exc))
+    }
 	_start = . ;
-    .text : { KEEP(*(.text* .text.* .gnu.linkonce.t*)) }
-    .rodata : { *(.rodata .rodata.* .gnu.linkonce.r*) }
-    .data :
-    {
-        . = ALIGN(16);
+    .text :  {  /* code can be placed with the exception vector */
+        KEEP(*(.text* .text.* .gnu.linkonce.t*));
+    }
+    .rodata  . : ALIGN(0x10000) {
+        *(.rodata .rodata.* .gnu.linkonce.r*)
+    }
+    .data . : ALIGN(0x10000) {
         _sdata = .;
         *(.data)
         *(.data*)
         . = ALIGN(16);
         _edata = .;
-    }
-    .bss (NOLOAD) : {
+	}
+    .bss . (NOLOAD) : ALIGN(0x10000) {
         . = ALIGN(16);
         _sbss = .;
         *(.bss .bss.*)

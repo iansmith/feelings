@@ -74,10 +74,10 @@ func generate(fp *os.File, outFilename string) {
 }
 
 const lit = `
-.global %s
-.global %sPtr
-%sPtr:
-	.dword %s
+.global "ladies/%s"
+.global "ladies/%sPtr"
+"ladies/%sPtr":
+	.dword "ladies/%s"
 `
 const warn = `
 // DO NOT EDIT! This file is machine genarted by genfuncptrs and your
