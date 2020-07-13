@@ -76,6 +76,38 @@ type rawDirEnt struct {
 	Size           uint32
 }
 
+type mbrInfo struct {
+	unused     [mbrUnusedSize]uint8
+	Partition1 partitionInfo //customary to number from 1
+	Partition2 partitionInfo
+	Partition3 partitionInfo
+	Partition4 partitionInfo
+	Signature  uint16 //0xaa55
+}
+
+type partitionInfo struct {
+	Status         uint8        // 0x80 - active partition
+	HeadStart      uint8        // starting head
+	CylSelectStart uint16       // starting cylinder and sector
+	Type           uint8        // partition type (01h = 12bit FAT, 04h = 16bit FAT, 05h = Ex MSDOS, 06h = 16bit FAT (>32Mb), 0Bh = 32bit FAT (<2048GB))
+	HeadEnd        uint8        // ending head of the partition
+	CylSectEnd     uint16       // ending cylinder and sector
+	FirstSector    sectorNumber // total sectors between MBR & the first sector of the partition
+	SectorsTotal   uint32       // size of this partition in sectors
+}
+
+type fatPartition struct {
+	rootCluster         clusterNumber // Active partition rootCluster
+	sectorsPerCluster   uint32        // Active partition sectors per cluster
+	bytesPerSector      uint32        // Active partition bytes per sector
+	fatOrigin           sectorNumber  // The beginning of the 1 or more FATs (sector number)
+	fatSize             uint32        // fat size in sectors, including all FATs
+	dataSectors         uint32        // Active partition data sectors
+	unusedSectors       uint32        // Active partition unused sectors (this is also the offset of the partition)
+	reservedSectorCount uint32        // Active partition reserved sectors
+	isFAT16             bool
+}
+
 type sectorNumber uint32
 type clusterNumber uint32
 type inodeNumber uint64

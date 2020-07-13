@@ -71,8 +71,9 @@ const (
 	EmmcFailedReadIntoCache    EmmcError = -33
 	EmmcNotDirectory           EmmcError = -34
 	EmmcUnexpectedEOF          EmmcError = -35
-	EmmcSeekFailed             EmmcError = -37
-	EmmcUnknown                EmmcError = -37
+	EmmcSeekFailed             EmmcError = -36
+	EmmcSendIfCondFailed       EmmcError = -37
+	EmmcUnknown                EmmcError = -38
 )
 
 func (e EmmcError) Error() string {
@@ -156,7 +157,9 @@ func (e EmmcError) String() string {
 	case -36:
 		return "EmmcSeekFailed"
 	case -37:
-		return "EmmcUknown"
+		return "EmmcSendIfCondFailed"
+	case -38:
+		return "EmmcUnknown"
 	}
 	return "BadEmmcErrorValue"
 }

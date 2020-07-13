@@ -24,6 +24,8 @@ BOOTASM=rpi3_baremetal_boot
 BOOTLIB=$(FEELINGS)/src/boot/lib
 TARGET=aarch64-none-elf
 
+IMAGEFILE=$(HOME)/mnt/feelings.img
+
 $(BOOTASM).o: $(BOOTLIB)/$(BOOTASM).S
 	$(TINYGO_CLANG) -target $(TARGET) -c -o $(BOOTASM).o $(BOOTLIB)/$(BOOTASM).S
 
@@ -56,8 +58,8 @@ run:
 		-serial null -serial chardev:char0 \
  		-d unimp,cpu_reset,guest_errors \
  		-semihosting -semihosting-config enable=on,target=native \
- 		--chardev pty,path=/dev/ttys009,mux=on,id=char0
-
+ 		--chardev pty,path=/dev/ttys009,mux=on,id=char0 \
+		-drive file=$(IMAGEFILE),if=sd,format=raw
 # 		 -serial mon:stdio \
 
 debug:

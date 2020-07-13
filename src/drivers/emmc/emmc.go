@@ -530,7 +530,7 @@ func sdfullinit() EmmcError {
 	var resp [4]uint32
 	if err := emmccmd(SendIfCond, 0x00000142, &resp); err != EmmcOk {
 		trust.Errorf("failed to issue SEND_IF_COND (for voltage)")
-		machine.Abort()
+		return EmmcSendIfCondFailed
 	}
 	delay(3)
 	if emmcDriverDebug {

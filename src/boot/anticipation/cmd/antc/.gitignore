@@ -6,3 +6,4 @@ kernel8.img.hardware
 antc.hardware
 *.o
 font.psf
+trace-*

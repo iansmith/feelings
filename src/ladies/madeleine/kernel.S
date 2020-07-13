@@ -7,25 +7,49 @@
 
 .global start
 start:
-	//stack pointer is in the structure, but put into sp and store in _stack_top
-	ldr x5,[x0,#24]
-	mov sp, x5
-	adrp x6, _stack_top
-	add x6,x6,#:lo12:_stack_top
-	str x5,[x6]
+	//stack pointer is in the structure
+	ldr x5,[x0,#24]   // stack BASE (not SP)
+	ldr x7,[x0,#56]   // page counts
+	and x7,x7,#0xff00 // 2nd byte is stack
+	lsr x7,x7,#8      // have isolated the stack pages count
+	sub x7,x7,#1      // num pages is 1 too many for this calculation
+	lsl x7,x7,#16     // convert to pages
+	add x5,x5,x7      // x5 is now the smallest addr of last page
+	mov x7,#0xfff
+	lsl x7,x7,#4      // x7=0xfff0, which is 16 byte aligned
+	add x5,x5,x7      // x5 is absolute top of the stack (highest addr on page)
+
+	mov sp, x5        // set stack pointer
+
+	adrp x6, _stack_top            // get addr of stack top, top bits
+	add x6,x6,#:lo12:_stack_top    // get rest of addr of stack top
+	str x5,[x6]                    // store our sp value in there
 
 
-	// heap start is in the struction
+	// heap start is in the structure
+	ldr x5, [x0,#32]               // heap start at 32 bytes in
+	ldr x7,[x0,#56]                // page counts
+	mov x7, #0xff0000              // mask for number of pages
+
 	adrp x6, _heap_start
 	add x6,x6,#:lo12:_heap_start
 	ldr x5,[x0,#32]
 	str x5,[x6]
 
-	//heap end is in the structure
-	adrp x6, _heap_end
+	ldr x7,[x0,#56]               // page counts
+	and x7,x7,#0xff0000           // 3rd byte is stack
+    lsr x7,x7,#8                  // have isolated the stack pages count
+    sub x7,x7,#1                  // num pages is 1 too many for this calculation
+    lsl x7,x7,#16                 // convert to pages
+	add x5,x5,x7                  // x5 is now the smallest addr of last page
+	mov x7,#0xfff
+	lsl x7,x7,#4                  // x7=0xfff0, almost to end of page
+	add x5,x5,x7                  // x5 is now last addr of last page of heap
+
+	//store value at heap_end
+	adrp x6, _heap_end            //get addr in x6
 	add x6,x6,#:lo12:_heap_end
-	ldr x5,[x0,#40]
-	str x5,[x6]
+	str x5,[x6]                   //store top addr (from above) in there
 
 	b kernel_main
 
