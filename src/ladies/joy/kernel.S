@@ -11,9 +11,9 @@ start:
 	adrp x6, _stack_top
 	add x6,x6,#:lo12:_stack_top
 	str x5,[x6]
+	mov sp, x5
 
-
-	// heap start is in the struction
+	// heap start is in the structure
 	adrp x6, _heap_start
 	add x6,x6,#:lo12:_heap_start
 	ldr x5,[x0,#32]

@@ -8,8 +8,11 @@ ENTRY(start)
 
 SECTIONS
 {
-	. = 0xfffffc0000000000;
-    .exc . : ALIGN(0x10000) { /* exception vector*/
+	/* this starts ONE PAGE from the zero address so that
+	  we can make sure a zero dereference as an address
+	  produces a page fault */
+	. = 0xfffffc0000010000;
+    .exc :  { /* exception vector*/
         KEEP(*(.exc))
     }
 	_start = . ;

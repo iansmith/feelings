@@ -47,7 +47,7 @@ $(KERNELASM).o: ../../$(KERNELASM).S
 OBJS=font.o $(EXCEPTIONASM).o $(KERNELASM).o #$(FUNCPTRS).o
 
 $(NAME): *.go $(EXCEPTIONASM).o font.o $(KERNELASM).o # $(FUNCPTRS).o
-	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -opt 1 -ldflags='$(OBJS)' -target $(NAME)_qemu.json -o $(NAME) .
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -cflags=-g -opt 1 -ldflags='$(OBJS)' -target $(NAME)_qemu.json -o $(NAME) .
 
 $(NAME).hardware: *.go $(EXCEPTIONASM).o font.o $(KERNELASM).o  # $(FUNCPTRS).o
 	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='$(OBJS)' -target $(NAME).json -o $(NAME).hardware .

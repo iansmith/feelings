@@ -30,6 +30,9 @@ const noLast16 = 0xffffffffffff0000
 //export _enable_mmu_tables
 func enableMMUTables(mairVal uint64, tcrVal uint64, sctrlVal uint64, ttbr0 uint64, ttbr1 uint64)
 
+//export _enable_mmu_tables_other_core
+func enableMMUTablesOtherCore(mairVal uint64, tcrVal uint64, sctrlVal uint64, ttbr0 uint64, ttbr1 uint64, core uint64) int
+
 const isKernelAddrMask = 0xfffffc0000000000
 
 const TTBR0Val = uint64(0x10000) //this is where we START our page tables, must be 64K aligned
@@ -254,7 +257,10 @@ func processLine(line string) (bool, error) {
 }
 
 //export jump_to_kernel
-func jumpToKernel(ep uint64, blockPtr uint64, _ uint64, _ uint64, _ uint64)
+func jumpToKernel(ep uint64, blockPtr uint64, paramPtr uint64, _ uint64, _ uint64)
+
+//export jump_to_kernel_proc
+func jumpToKernelProc(procId uint64, ttbr1 uint64, entryPoint uint64, paramPtrSource uint64, paramPtrDest uint64, _ uint64)
 
 var sleepOneTickAmount uint32
 

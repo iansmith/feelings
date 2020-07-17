@@ -222,14 +222,18 @@ cpu0_exit_multicore_park:
 //"================================================================"
 //			We going to park Core 1,2,3 to secondary spin
 //"================================================================"
+.align 4
+// xxx shared with the other binary and we have to COPY this value there, ugh
+.equ spin_locations_base, 0xd8              // offset to make math work
+                                            // in principle, core 0 offset
 .equ spin_cpu1, 0xe0
     mov x1, #spin_cpu1                      // Spin core1 jump address
 	str xzr, [x1]
-.equ spin_cpu1, 0xe8
-    mov x1, #spin_cpu1                      // Spin core2 jump address
+.equ spin_cpu2, 0xe8
+    mov x1, #spin_cpu2                      // Spin core2 jump address
 	str xzr, [x1]
 .equ spin_cpu3, 0xf0
-    mov x1, #spin_cpu1                      // Spin core3 jump address
+    mov x1, #spin_cpu3                      // Spin core3 jump address
 	str xzr, [x1]
 
 //"================================================================"
@@ -247,24 +251,24 @@ hang:
 /*++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++}
 {    Modified bootloader Spin loop but tolerant on registers X0-X7 for C    }
 {++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
-.equ spin_cpu0, 0xd8
 .balign	4
 StartSecondarySpin:
     mrs x6, mpidr_el1                       // Fetch core Id
     and x6, x6, #0x3                        // Create 2 bit mask of core Id
-    mov x5, #spin_cpu0                      // Load address of spins
+    mov x5, #spin_locations_base            // Load address of spins
     mov x1, #0                              // zero x1 register
     str x1, [x5, x6, lsl #3]                // Make sure caller address is zeroed
 secondary_spin:
     wfe                                     // This is all I really want: processor to sleep
+                                            // will be woken by boot loader when kernel proc is ready
     ldr x4, [x5, x6, lsl #3]                // Fetch address that has been set
     cbz x4, secondary_spin                  // If zero spin
-    mov x0, #0
+    mov x0, #-1
     str x0, [x5, x6, lsl #3]                // Zero caller address
     mov x1, #0
     mov x2, #0
     mov x3, #0
-    add x27,x5,x6
+    add x27,x5,x6                           // that's odd, maybe should be [x6, lsl #3]?
     mov x28,x4
     blr x4                                  // Call the function set
     b StartSecondarySpin                    // Loop back to spinlock
@@ -318,7 +322,7 @@ CoreExecute:
     bcs CoreExecuteFail
     mov x6, #0
     mov w6, w0
-    mov x5, #spin_cpu0                      // Load address of spins
+    mov x5, #spin_locations_base            // Load address of spins
     str x1, [x5, x6, lsl #3]                // Save caller address
     dsb sy
     sev

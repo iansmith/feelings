@@ -5,11 +5,17 @@
 //
 .global kernel_main
 
+// if we get here, we are running in kernel space with an address that looks
+// like 0xffff_fc00_xxxx_xxxx
 .global start
 start:
+	// our bootloader_params is already set up by the bootloader
+	adrp x1, bootloader_params
+    add x1,x1,#:lo12:bootloader_params
+
 	//stack pointer is in the structure
-	ldr x5,[x0,#24]   // stack BASE (not SP)
-	ldr x7,[x0,#56]   // page counts
+	ldr x5,[x1,#24]   // stack BASE (not SP)
+	ldr x7,[x1,#64]   // page counts
 	and x7,x7,#0xff00 // 2nd byte is stack
 	lsr x7,x7,#8      // have isolated the stack pages count
 	sub x7,x7,#1      // num pages is 1 too many for this calculation
@@ -19,7 +25,7 @@ start:
 	lsl x7,x7,#4      // x7=0xfff0, which is 16 byte aligned
 	add x5,x5,x7      // x5 is absolute top of the stack (highest addr on page)
 
-	mov sp, x5        // set stack pointer
+	mov sp, x5        // set stack pointer, woot!
 
 	adrp x6, _stack_top            // get addr of stack top, top bits
 	add x6,x6,#:lo12:_stack_top    // get rest of addr of stack top
@@ -27,17 +33,16 @@ start:
 
 
 	// heap start is in the structure
-	ldr x5, [x0,#32]               // heap start at 32 bytes in
-	ldr x7,[x0,#56]                // page counts
+	ldr x5, [x1,#32]               // heap start at 32 bytes in
+	ldr x7,[x1,#64]                // page counts
 	mov x7, #0xff0000              // mask for number of pages
 
 	adrp x6, _heap_start
 	add x6,x6,#:lo12:_heap_start
-	ldr x5,[x0,#32]
+	ldr x5,[x1,#32]
 	str x5,[x6]
 
-	ldr x7,[x0,#56]               // page counts
-	and x7,x7,#0xff0000           // 3rd byte is stack
+	//conversion implies right shift, then left
     lsr x7,x7,#8                  // have isolated the stack pages count
     sub x7,x7,#1                  // num pages is 1 too many for this calculation
     lsl x7,x7,#16                 // convert to pages
@@ -51,10 +56,11 @@ start:
 	add x6,x6,#:lo12:_heap_end
 	str x5,[x6]                   //store top addr (from above) in there
 
-	b kernel_main
+	//let's go!
+	bl kernel_main
+hang:
+	b hang   //just in case
 
-
-.globl "ladies/madeleine.setHeapPointers"
 
 // per family heap info
 .extern _heap_start
@@ -111,4 +117,3 @@ tinygo_scanCurrentStack:
 
 	// Return to the caller.
     ret
-

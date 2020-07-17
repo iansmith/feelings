@@ -68,4 +68,5 @@ debug:
 		-semihosting -semihosting-config enable=on,target=native \
 		-serial null -serial chardev:char0 \
 		-d unimp,cpu_reset,guest_errors \
+		-drive file=$(IMAGEFILE),if=sd,format=raw \
 		--chardev pty,path=/dev/ttys009,mux=on,id=char0

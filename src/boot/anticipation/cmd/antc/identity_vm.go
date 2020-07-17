@@ -9,10 +9,13 @@ const kernelBase = uintptr(0x3000_104C | isKernelAddrMask)
 // setup the virtual memory to be identity mapped
 // physical == virtual
 //
+var MAIRVal uint64
+var TCREL1Val uint64
+var SCTRLEL1Val uint64
 
 func setupVM() {
 	//setup memory types and attributes
-	MAIRVal := uint64(((MemoryDeviceNoGatherNoReorderNoEarlyWriteAckValue << (MemoryDeviceNoGatherNoReorderNoEarlyWriteAck * 8)) |
+	MAIRVal = uint64(((MemoryDeviceNoGatherNoReorderNoEarlyWriteAckValue << (MemoryDeviceNoGatherNoReorderNoEarlyWriteAck * 8)) |
 		(MemoryNoCacheValue << (MemoryNoCache * 8)) |
 		(MemoryNormalValue << (MemoryNormal * 8))))
 
@@ -23,7 +26,7 @@ func setupVM() {
 	// EPD0 - enable walks in userspc
 	//TCR REG https://developer.arm.com/docs/ddi0595/b/aarch64-system-registers/tcr_el1
 
-	TCREL1Val := uint64(((0b11 << 30) | // granule size in kernel
+	TCREL1Val = uint64(((0b11 << 30) | // granule size in kernel
 		(0b11 << 28) | // inner shareable
 		(0b01 << 26) | // write back (outer)
 		(0b01 << 24) | // write back (inner)
@@ -38,7 +41,7 @@ func setupVM() {
 	//TTBR0Val := uint64((0x100000 << 7) | UndocumentedTTBRCNP) //base addr 0x10_0000, no other shenanigans
 	//TTBR1Val := uint64((0x100000 << 7) | UndocumentedTTBRCNP) //base addr 0x10_0000, no other shenanigans
 
-	SCTRLEL1Val := uint64((0xC00800) | //mandatory reserved 1 bits
+	SCTRLEL1Val = uint64((0xC00800) | //mandatory reserved 1 bits
 		(1 << 12) | // I Cache for both el1 and el0
 		(1 << 4) | // SA0 stack alignment check in el0
 		(1 << 3) | // SA stack alignment check in el1
