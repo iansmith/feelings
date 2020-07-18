@@ -20,8 +20,7 @@ const KernelProcessLinkAddr = 0xffff_fc00_0001_0000 //(no write)
 const MadeleineProcessor = 3
 
 // this is the PHYS addr that the bootloader will place Madeleine at
-// after it sets up the tables on appropriate processor.  this is
-// the key
+// after it sets up the tables on appropriate processor.
 const MadeleinePlacement = 0x3020_0000 // just above Kernel Shared Mappings
 
 //

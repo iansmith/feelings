@@ -68,47 +68,30 @@ jump_to_kernel_proc:
 
 	mov x5, #spin_locations_base   // this is a bogus address to make the math work out
 	lsl x0,x0,#3                   // mult by 8
-	add x5, x5, x0                 // x5 points to the first slot for that core now
-wait_for_clear:
-	ldr x6, [x5]
-	cbnz x6,wait_for_clear
-    str x2, [x5]                   // store entry point for proper core
+	add x5, x5, x0                 // x5 points to the entry point slot for that core now
+	                               // we hold it x5 while we copy the boot params
 
     //now we copy the boot parameters from x3 to x4 but using the physical address
     //because we are on the wrong ttbr1 value and we are on core 0.. x3 is the bootloader
     //addr space, x4 is in the kernel proc but this is ok because we are el1 and
     //we are using the physical addrs (or really identity mapped virtual addrs on core 0)
-    mov x0, x3  //prep
-    mov x1, x4  //prep
 
-    //we do the copy with a moving x0 and a fixed x1
-    ldr x2, [x0, #0]
-    str x2,[x1,#0]
+    //we do the copy with and indexed addressing mode
+    mov x7, #72  // one past the end, because we subtract immediately
+copy_param:
+	sub x7,x7,#8
+	ldr x0, [x3, x7]
+	str x0, [x4, x7]
+	cbnz x7,copy_param
 
-    ldr x2, [x0, #8]
-    str x2,[x1,#8]
+	// want to store the correct addr (x2) into the location pointed to by x5
+	// so the other core will see it and jump to x2
+wait_for_clear:
+	ldr x6, [x5]
+	cbnz x6,wait_for_clear
+    str x2, [x5]                   // store entry point for proper core
 
-    ldr x2, [x0, #16]
-    str x2,[x1,#16]
-
-    ldr x2,[x0,#24]
-    str x2,[x1,#24]
-
-    ldr x2,[x0,#32]
-    str x2,[x1,#32]
-
-    ldr x2,[x0,#40]
-    str x2,[x1,#40]
-
-    ldr x2,[x0,#40]
-    str x2,[x1,#48]
-
-    ldr x2,[x0,#56]
-    str x2,[x1,#56]
-
-    ldr x2,[x0, #64]
-    str x2,[x1,#64]
-
+	//make sure all cores is aware
     dsb sy
 	//ok, hit it
     sev                           // wakes other core from park

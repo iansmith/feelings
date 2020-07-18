@@ -13,7 +13,12 @@ start:
 	adrp x1, bootloader_params
     add x1,x1,#:lo12:bootloader_params
 
-	//stack pointer is in the structure
+	// initialize VBAR_EL1 with vector table
+	adrp x6, VectorTable            // get addr of stack top, top bits
+    add x6,x6,#:lo12:VectorTable    // get rest of addr of stack top
+    msr vbar_el1,x6                 // store the addr in the place CPU can find it
+
+	//stack pointer is in the structure, but it's the PAGE
 	ldr x5,[x1,#24]   // stack BASE (not SP)
 	ldr x7,[x1,#64]   // page counts
 	and x7,x7,#0xff00 // 2nd byte is stack
@@ -34,13 +39,13 @@ start:
 
 	// heap start is in the structure
 	ldr x5, [x1,#32]               // heap start at 32 bytes in
-	ldr x7,[x1,#64]                // page counts
-	mov x7, #0xff0000              // mask for number of pages
-
 	adrp x6, _heap_start
 	add x6,x6,#:lo12:_heap_start
-	ldr x5,[x1,#32]
 	str x5,[x6]
+
+	//get the number of pages for heap end
+	ldr x7,[x1,#64]                // page counts
+	mov x7, #0xff0000              // mask for number of pages
 
 	//conversion implies right shift, then left
     lsr x7,x7,#8                  // have isolated the stack pages count

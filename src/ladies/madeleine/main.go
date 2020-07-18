@@ -2,13 +2,10 @@ package madeleine
 
 import "lib/trust"
 
-//go:external init_exception_vector
-func initExceptionVector()
-
 // true entry point
 //go:export kernel_main
 func KernelMain() {
-	initExceptionVector()
+	//we have already initialized the kernel exception vector in start()
 
 	trust.Debugf("kernelMain1")
 
