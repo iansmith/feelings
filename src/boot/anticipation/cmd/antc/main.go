@@ -10,6 +10,7 @@ import (
 	"runtime/volatile"
 
 	"boot/anticipation"
+	"lib/loader"
 	"lib/trust"
 	"lib/upbeat"
 )
@@ -92,9 +93,10 @@ func main() {
 	machine.MiniUART.WriteString("about to try to read the disk...\n")
 
 	//this is to test to see if we need to a disk based boot
-	fp, ok := canBootFromDisk(logger)
+	ok := canBootFromDisk(logger)
 	if ok {
-		bootDisk(fp, logger)
+		params := loader.NewKernelProcStartupInfo(maddie, 3)
+		params.KernelProcBootFromDisk(logger)
 		logger.Errorf("Failed on attempt to boot from disk, aborting.")
 		machine.Abort()
 	} else {

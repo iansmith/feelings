@@ -21,7 +21,10 @@ TINYGO_TINYGO=$(TINYGO)/build/tinygo
 
 FONTDIR=$(FEELINGS)/src/lib/upbeat
 BOOTASM=rpi3_baremetal_boot
+MMUASM=mmu
+SET_REGS=set_regs
 BOOTLIB=$(FEELINGS)/src/boot/lib
+LOADERLIB=$(FEELINGS)/src/lib/loader
 TARGET=aarch64-none-elf
 
 IMAGEFILE=$(HOME)/mnt/feelings.img
@@ -29,8 +32,13 @@ IMAGEFILE=$(HOME)/mnt/feelings.img
 $(BOOTASM).o: $(BOOTLIB)/$(BOOTASM).S
 	$(TINYGO_CLANG) -target $(TARGET) -c -o $(BOOTASM).o $(BOOTLIB)/$(BOOTASM).S
 
-set_regs.o: set_regs.S
-	$(TINYGO_CLANG) -target $(TARGET) -c -o set_regs.o set_regs.S
+$(MMUASM).o: $(LOADERLIB)/$(MMUASM).S
+	$(TINYGO_CLANG) -target $(TARGET) -c -o $(MMUASM).o $(LOADERLIB)/$(MMUASM).S
+
+$(SET_REGS).o: $(SET_REGS).S
+	$(TINYGO_CLANG) -target $(TARGET) -c -o $(SET_REGS).o $(SET_REGS).S
+
+ALL_ASM_OBJS=$(BOOTASM).o $(MMUASM).o $(SET_REGS).o
 
 font.psf: $(FONTDIR)/font.psf
 	cp $(FONTDIR)/font.psf .
@@ -38,11 +46,11 @@ font.psf: $(FONTDIR)/font.psf
 font.o: font.psf
 	$(TINYGO_LLD) -m aarch64elf -r -b binary -o font.o font.psf
 
-$(NAME): *.go font.o set_regs.o $(BOOTASM).o
-	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='font.o set_regs.o $(BOOTASM).o' -cflags='-g' -target $(NAME)_qemu.json -o $(NAME) .
+$(NAME): *.go font.o  $(ALL_ASM_OBJS)
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -ldflags='font.o $(ALL_ASM_OBJS)' -cflags='-g' -target $(NAME)_qemu.json -o $(NAME) .
 
-$(NAME).hardware: *.go font.o set_regs.o $(BOOTASM).o
-	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build  -ldflags='font.o set_regs.o  $(BOOTASM).o' -target $(NAME).json -o $(NAME).hardware .
+$(NAME).hardware: *.go font.o $(ALL_ASM_OBJS)
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build  -ldflags='font.o $(ALL_ASM_OBJS)' -target $(NAME).json -o $(NAME).hardware .
 
 clean:
 	rm $(NAME) $(NAME).hardware kernel8.img kernel8.img.hardware *.o >/dev/null 2>/dev/null || true

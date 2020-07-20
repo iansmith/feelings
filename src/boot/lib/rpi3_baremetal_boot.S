@@ -263,8 +263,7 @@ secondary_spin:
                                             // will be woken by boot loader when kernel proc is ready
     ldr x4, [x5, x6, lsl #3]                // Fetch address that has been set
     cbz x4, secondary_spin                  // If zero spin
-    mov x0, #-1
-    str x0, [x5, x6, lsl #3]                // Zero caller address
+
     mov x1, #0
     mov x2, #0
     mov x3, #0

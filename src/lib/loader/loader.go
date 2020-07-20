@@ -1,4 +1,4 @@
-package main
+package loader
 
 import (
 	"debug/elf"
@@ -19,8 +19,64 @@ const sectionBufferSize = 512
 const fixedSizeOfHeap = 4  //in pages
 const fixedSizeOfStack = 2 //in pages
 
+//these are indices into the MAIR register
+const MemoryDeviceNoGatherNoReorderNoEarlyWriteAck = 0
+const MemoryNoCache = 1
+const MemoryNormal = 2
+
+//these are values for the MAIR register
+const MemoryDeviceNoGatherNoReorderNoEarlyWriteAckValue = 0x00 //it's hardware regs
+const MemoryNoCacheValue = 0x44                                //not inner or outer cacheable
+const MemoryNormalValue = 0xFF                                 //cache all you want, including using TLB
+
+//setup memory types and attributes
+var MAIRVal = uint64(((MemoryDeviceNoGatherNoReorderNoEarlyWriteAckValue << (MemoryDeviceNoGatherNoReorderNoEarlyWriteAck * 8)) |
+	(MemoryNoCacheValue << (MemoryNoCache * 8)) |
+	(MemoryNormalValue << (MemoryNormal * 8))))
+
+// zero on these fields
+// TBI - no tag bits
+// IPS - 32 bit (4GB)
+// EPD1 - enable walks in kernel
+// EPD0 - enable walks in userspc
+//TCR REG https://developer.arm.com/docs/ddi0595/b/aarch64-system-registers/tcr_el1
+var TCREL1Val = uint64(((0b11 << 30) | // granule size in kernel
+	(0b11 << 28) | // inner shareable
+	(0b01 << 26) | // write back (outer)
+	(0b01 << 24) | // write back (inner)
+	(22 << 16) | //22 is T1SZ, 42bit addr space (same as example https://developer.arm.com/docs/den0024/latest/the-memory-management-unit/translating-a-virtual-address-to-a-physical-address)
+	(0b1 << 14) | // granule size in user
+	(0b11 << 12) | //inner shareable
+	(0b01 << 10) | //write back (outer)
+	(0b01 << 8) | //write back (inner)
+	(22 << 0))) //22 is T0SZ, 42 bit addr space
+
+var SCTRLEL1Val = uint64((0xC00800) | //mandatory reserved 1 bits
+	(1 << 12) | // I Cache for both el1 and el0
+	(1 << 4) | // SA0 stack alignment check in el0
+	(1 << 3) | // SA stack alignment check in el1
+	(1 << 2) | //  D Cache for both el1 and el0
+	(1 << 1) | //  Alignment check enable
+	(1 << 0)) // MMU ENABLED!! THE BIG DOG
+
+const TTBR0Val = uint64(0x10000) //this is where we START our page tables, must be 64K aligned
+
+//drop bottom 64k
+const noLast16 = 0xffffffffffff0000
+
+//as we read blobs from disk, they are stored here
 var sectionBuffer [sectionBufferSize]byte
 
+//export _enable_mmu_tables
+func enableMMUTables(mairVal uint64, tcrVal uint64, sctrlVal uint64, ttbr0 uint64, ttbr1 uint64)
+
+//export _enable_mmu_tables_other_core
+func enableMMUTablesOtherCore(mairVal uint64, tcrVal uint64, sctrlVal uint64, ttbr0 uint64, ttbr1 uint64, core uint64) int
+
+//export jump_to_kernel_proc
+func jumpToKernelProc(procId uint64, ttbr1 uint64, entryPoint uint64, paramPtrSource uint64, paramPtrDest uint64, _ uint64)
+
+//ptypes are used to iterate through the various parts of setting up the VM tables
 type ptype int
 
 const executableCode ptype = 1
@@ -77,35 +133,69 @@ type KernelProcStartupInfo struct {
 	RWLowestVirt      uint64
 }
 
-var maddyParams = KernelProcStartupInfo{
-	Filename:              maddie,
-	KernelPageSize:        KernelPageSize,
-	Processor:             bootloader.MadeleineProcessor,
-	ProcCodePlacementPhys: bootloader.MadeleinePlacement,
-	ProcLevel2Phys:        bootloader.MadelineTableLevel2,
-	ProcLevel3Phys:        bootloader.MadelineTableLevel3Start,
-	ProcHeapLoc:           bootloader.KernelProcessHeap,
-	ProcHeapVirt:          bootloader.KernelProcessHeapAddr,
-	ProcHeapSize:          fixedSizeOfHeap,
-	ProcStackLoc:          bootloader.KernelProcessStack,
-	ProcStackVirt:         bootloader.KernelProcessStackAddr,
-	ProcLinkVirt:          bootloader.KernelProcessLinkAddr,
-	ProcStackSize:         fixedSizeOfStack,
-	MAIRVal:               MAIRVal,
-	SCTRLEL1Val:           SCTRLEL1Val,
-	TCREL1Val:             TCREL1Val,
-	TTBR0Val:              TTBR0Val,
-	SymbolToVirt:          map[string]uint64{bootloaderParams: 0},
-	NameToSizeInPages:     nil, //return values overwrite
-	EntryPoint:            0,   //return value should overwrite 0
+//
+// var maddyParams = KernelProcStartupInfo{
+// 	Filename:              maddie,
+// 	KernelPageSize:        KernelPageSize,
+// 	Processor:             bootloader.MadeleineProcessor,
+// 	ProcCodePlacementPhys: bootloader.MadeleinePlacement,
+// 	ProcLevel2Phys:        bootloader.MadelineTableLevel2,
+// 	ProcLevel3Phys:        bootloader.MadelineTableLevel3Start,
+// 	ProcHeapLoc:           bootloader.KernelProcessHeap,
+// 	ProcHeapVirt:          bootloader.KernelProcessHeapAddr,
+// 	ProcHeapSize:          fixedSizeOfHeap,
+// 	ProcStackLoc:          bootloader.KernelProcessStack,
+// 	ProcStackVirt:         bootloader.KernelProcessStackAddr,
+// 	ProcLinkVirt:          bootloader.KernelProcessLinkAddr,
+// 	ProcStackSize:         fixedSizeOfStack,
+// 	MAIRVal:               MAIRVal,
+// 	SCTRLEL1Val:           SCTRLEL1Val,
+// 	TCREL1Val:             TCREL1Val,
+// 	TTBR0Val:              TTBR0Val,
+// 	SymbolToVirt:          map[string]uint64{bootloaderParams: 0},
+// 	NameToSizeInPages:     nil, //return values overwrite
+// 	EntryPoint:            0,   //return value should overwrite 0
+// }
+
+func NewKernelProcStartupInfo(filename string, processor uint64 /*0-3*/) *KernelProcStartupInfo {
+	return &KernelProcStartupInfo{
+		Filename:              filename,
+		KernelPageSize:        KernelPageSize,
+		Processor:             processor,
+		ProcCodePlacementPhys: bootloader.MadeleinePlacement, //xxx only hardcoded value
+		ProcLevel2Phys:        procToLevel2Phys(processor),
+		ProcLevel3Phys:        procToLevel3Phys(processor),
+		ProcHeapLoc:           bootloader.KernelProcessHeap,
+		ProcHeapVirt:          bootloader.KernelProcessHeapAddr,
+		ProcHeapSize:          fixedSizeOfHeap,
+		ProcStackLoc:          bootloader.KernelProcessStack,
+		ProcStackVirt:         bootloader.KernelProcessStackAddr,
+		ProcLinkVirt:          bootloader.KernelProcessLinkAddr,
+		ProcStackSize:         fixedSizeOfStack,
+		MAIRVal:               MAIRVal,
+		SCTRLEL1Val:           SCTRLEL1Val,
+		TCREL1Val:             TCREL1Val,
+		TTBR0Val:              TTBR0Val,
+		SymbolToVirt:          map[string]uint64{bootloaderParams: 0},
+		NameToSizeInPages:     nil, //return values overwrite
+		EntryPoint:            0,   //return value should overwrite 0
+	}
 }
 
-func virtToPhysInKernelProc(table3Start uint64, vaddr uint64) uint64 {
+func procToLevel2Phys(proc uint64 /*0-3*/) uint64 {
+	return 0x3000_0000 + (proc * 0x2_0000)
+}
+func procToLevel3Phys(proc uint64 /*0-3*/) uint64 {
+	return procToLevel2Phys(proc) + 0x1_0000
+}
+
+//go:noinline
+func virtToPhysInKernelProc(_ *trust.Logger, table3Start uint64, vaddr uint64) uint64 {
 	pagePtr := vaddr & (0x0000_0000_ffff_0000) //get rid of kernel prefix and index bits
 	pagePtr = pagePtr >> 16                    //shift to make it an index into table level 3
 	offsetInTable := pagePtr * 8               //64 bits per element
-	index := (*uint64)((unsafe.Pointer)(uintptr(bootloader.MadelineTableLevel3Start) + uintptr(offsetInTable)))
-	truePage := (*index & noLast16) // cruft in the last few bits for VM use only
+	index := (*uint64)((unsafe.Pointer)(uintptr(table3Start) + uintptr(offsetInTable)))
+	truePage := (*index) & noLast16 // cruft in the last few bits for VM use only
 	physAddr := (uintptr)(unsafe.Pointer(uintptr(truePage + (vaddr & (0xffff)))))
 	return uint64(physAddr)
 }
@@ -142,10 +232,10 @@ func (e LoaderError) String() string {
 	}
 }
 
-func (k *KernelProcStartupInfo) KernelProcBootFromDisk() LoaderError {
+func (k *KernelProcStartupInfo) KernelProcBootFromDisk(logger *trust.Logger) LoaderError {
 	fp, err := emmc.Impl.Open(k.Filename)
 	if err != nil {
-		logger.Errorf("Unable to find %s binary, "+
+		trust.Errorf("Unable to find %s binary, "+
 			"booting from serial port...", maddie)
 		return LoaderKernelProcFileNotFound
 
@@ -176,6 +266,7 @@ func (k *KernelProcStartupInfo) KernelProcBootFromDisk() LoaderError {
 			}
 		}
 	}
+	logger.Debugf("here1")
 	overhang := uint64(1)
 	if totalExcText%KernelPageSize == 0 {
 		overhang = 0
@@ -188,7 +279,7 @@ func (k *KernelProcStartupInfo) KernelProcBootFromDisk() LoaderError {
 	currentPhys := k.ProcCodePlacementPhys
 	for _, sectName := range []string{".exc", ".text", ".rodata", ".data", ".bss"} {
 		section := elfFile.Section(sectName)
-		logger.Debugf("loading %-10s @ 0x%x", sectName, currentPhys)
+		trust.Debugf("loading %-10s @ 0x%x", sectName, currentPhys)
 		read := uint64(0)
 		for read < section.Size {
 			reader := elfFile.Section(sectName).Open()
@@ -201,7 +292,7 @@ func (k *KernelProcStartupInfo) KernelProcBootFromDisk() LoaderError {
 				if err == io.EOF {
 					break
 				}
-				logger.Errorf("Unable to read section %s: %v", sectName, err)
+				trust.Errorf("Unable to read section %s: %v", sectName, err)
 				return LoaderKernelProcCannotReadElfSection
 			}
 			for i := 0; i < n; i++ {
@@ -218,6 +309,7 @@ func (k *KernelProcStartupInfo) KernelProcBootFromDisk() LoaderError {
 			}
 		}
 	}
+	logger.Debugf("here3")
 	symbols, err := elfFile.Symbols()
 	if err != nil {
 		trust.Errorf("unable access symbol table: %v", err)
@@ -235,8 +327,8 @@ func (k *KernelProcStartupInfo) KernelProcBootFromDisk() LoaderError {
 		return LoaderKernelProcCannotFindBootloaderParameters
 	}
 
-	k.buildVMTransTables()
-	k.injectBootloaderParams()
+	k.buildVMTransTables(logger)
+	k.injectBootloaderParams(logger)
 
 	for {
 		arm.Asm("nop")
@@ -244,7 +336,7 @@ func (k *KernelProcStartupInfo) KernelProcBootFromDisk() LoaderError {
 
 }
 
-func (k *KernelProcStartupInfo) buildVMTransTables() {
+func (k *KernelProcStartupInfo) buildVMTransTables(logger *trust.Logger) {
 	// there are 8192 entries on this table, but we only care about 1 of
 	// them, which is the 0 entry..
 
@@ -254,6 +346,8 @@ func (k *KernelProcStartupInfo) buildVMTransTables() {
 			(uintptr(i) * 8)))
 		if i == 0 {
 			*ptr = makeTableEntry(uintptr(k.ProcLevel3Phys))
+			logger.Debugf("ptr is %x, value is %x, and %x,%x", ptr, *ptr,
+				k.ProcLevel3Phys, procToLevel3Phys(3))
 		} else {
 			*ptr = makeBadEntry() // not a valid entry, so it will crap out with page fault
 		}
@@ -275,9 +369,7 @@ func (k *KernelProcStartupInfo) buildVMTransTables() {
 
 		// make nil deref fail
 		if i == 0 {
-			// first page is left empty and the linker knows to
-			// not use it
-			logger.Debugf("first page, bad entry")
+			// first page is left empty and the linker knows to not use it
 			*ptr = makeBadEntry()
 			continue
 		}
@@ -330,7 +422,7 @@ func (k *KernelProcStartupInfo) buildVMTransTables() {
 		}
 	}
 }
-func (k *KernelProcStartupInfo) injectBootloaderParams() {
+func (k *KernelProcStartupInfo) injectBootloaderParams(logger *trust.Logger) {
 	// setup the injected parameters
 	bootloader.InjectedParams.HeapStart = k.ProcHeapVirt
 	bootloader.InjectedParams.StackStart = k.ProcStackVirt - ((k.ProcStackSize - 1) * 0x10000)
@@ -350,24 +442,9 @@ func (k *KernelProcStartupInfo) injectBootloaderParams() {
 	bootloader.InjectedParams.SetHeapPages(uint8(k.ProcHeapSize))
 	bootloader.InjectedParams.SetStackPages(uint8(k.ProcStackSize))
 
-	logger.Debugf("HeapStart           :0x%016x", bootloader.InjectedParams.HeapStart)
-	logger.Debugf("StackStart          :0x%016x", bootloader.InjectedParams.StackStart)
-	logger.Debugf("KernelCodeStart     :0x%016x", bootloader.InjectedParams.KernelCodeStart)
-	logger.Debugf("ReadOnlyStart       :0x%016x", bootloader.InjectedParams.ReadOnlyStart)
-	logger.Debugf("ReadWriteStart      :0x%016x", bootloader.InjectedParams.ReadWriteStart)
-	logger.Debugf("UnitializedStart    :0x%016x", bootloader.InjectedParams.ReadWriteStart)
-	logger.Debugf("EntryPoint          :0x%016x", bootloader.InjectedParams.EntryPoint)
-	logger.Debugf("EntryPoint          :0x%016x", bootloader.InjectedParams.EntryPoint)
-	logger.Debugf("PagesHeap           :%02d", bootloader.InjectedParams.HeapPages())
-	logger.Debugf("PagesStack          :%02d", bootloader.InjectedParams.StackPages())
-	logger.Debugf("PagesKernel         :%02d", bootloader.InjectedParams.KernelCodePages())
-	logger.Debugf("PagesUnitialized    :%02d", bootloader.InjectedParams.UnitializedPages())
-	logger.Debugf("PagesRO             :%02d", bootloader.InjectedParams.ReadOnlyPages())
-	logger.Debugf("PagesRW             :%02d", bootloader.InjectedParams.ReadWritePages())
-
 	// tricky: we have to compute the physical address ourselves for this because the virtual
 	// address is generated by the linker and doesn't know about our VM tables ...
-	truePhys := virtToPhysInKernelProc(k.ProcLevel3Phys, k.SymbolToVirt[bootloaderParams])
+	truePhys := virtToPhysInKernelProc(logger, k.ProcLevel3Phys, k.SymbolToVirt[bootloaderParams])
 	if err := enableMMUTablesOtherCore(k.MAIRVal, k.TCREL1Val, k.SCTRLEL1Val,
 		k.TTBR0Val, k.ProcLevel2Phys, k.Processor); err != 0 {
 		fmt.Errorf("failed to enable MMU tables for core %d", k.Processor)
@@ -376,8 +453,54 @@ func (k *KernelProcStartupInfo) injectBootloaderParams() {
 	jumpToKernelProc(k.Processor, k.ProcLevel2Phys, k.EntryPoint,
 		(uint64)(uintptr((unsafe.Pointer(&bootloader.InjectedParams)))),
 		truePhys /*derived from symbol location of bootloader_params*/, 0)
-	logger.Debugf("Bootloader deadlooping on proc 0")
+	trust.Debugf("Bootloader deadlooping on proc 0")
 	for {
 		arm.Asm("nop")
 	}
+}
+
+func makeTableEntry(destination uintptr) uint64 {
+
+	//low 2 bits as 0b11
+	//bits 5:2 are index into mair table (4 bits to ref which one)
+	//bits 7:6 el0 no read, no write (no read 0b01, no write 0b10)
+	//bits 9:8 inner and outer shareable (inner 0b11, outer 0b10)
+	//bit 10 AF flag, lets OS know if page is first accessed if 0
+	//bits 47:16 address (32 bits, because we are 64K granules)
+	result := uint64(
+		uint64(1<<63) | //secure state?!? why is it needed?
+			uint64(destination&noLast16) | //address of the _BASE_ of next table, just a mask because >>16 and then <<16
+			uint64(3<<0)) //last two bits indicate page tbl
+	return result
+}
+
+func makeBadEntry() uint64 {
+	//*ANY* entry in a page table must have the last bit high, so 0 is always bad (easy!)
+	return 0
+}
+
+// mair index == MemoryNormal
+// mair index == MemoryNoCache for video ram
+// mair index == MemoryDeviceNoGatherNoReorderNoEarlyWriteAckValue for device memory
+// destination is top 32 bits of final memory location
+func makePhysicalBlockEntry(destination uintptr, mairIndex uint64) uint64 {
+
+	//https://armv8-ref.codingbelief.com/en/chapter_d4/d44_1_memory_access_control.html
+	//we have SCTLR_EL1.WXN =0
+	//we have AP set to 0b00
+	//we have UXN set to 0
+	//we have PXN set to 0
+	//this implies: RWX from EL1, X only from EL0
+
+	result := uint64(
+		uint64(destination&noLast16) | //address of the PAGE, without low order
+			//no use of bit 11, this controls if access in per process id
+			(0b1 << 10) | //we are not yet using the ACCESS flag
+			(0b1 << 5) | //non-secure
+			(mairIndex&0x7)<<2 | // index in the MAIR register
+			uint64(0b11<<0)) //last two bits are 0b11 to indicate block entry
+	//note: last two bits are 0b01 *IF* you are not at level 3 of translation
+	//note: at level3, there is this special encoding and we are at level 3
+	//https://armv8-ref.codingbelief.com/en/chapter_d4/d43_2_armv8_translation_table_level_3_descriptor_formats.html
+	return result
 }

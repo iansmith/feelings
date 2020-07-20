@@ -9,45 +9,38 @@ const kernelBase = uintptr(0x3000_104C | isKernelAddrMask)
 // setup the virtual memory to be identity mapped
 // physical == virtual
 //
-var MAIRVal uint64
-var TCREL1Val uint64
-var SCTRLEL1Val uint64
+
+//setup memory types and attributes
+var MAIRVal = uint64(((MemoryDeviceNoGatherNoReorderNoEarlyWriteAckValue << (MemoryDeviceNoGatherNoReorderNoEarlyWriteAck * 8)) |
+	(MemoryNoCacheValue << (MemoryNoCache * 8)) |
+	(MemoryNormalValue << (MemoryNormal * 8))))
+
+// zero on these fields
+// TBI - no tag bits
+// IPS - 32 bit (4GB)
+// EPD1 - enable walks in kernel
+// EPD0 - enable walks in userspc
+//TCR REG https://developer.arm.com/docs/ddi0595/b/aarch64-system-registers/tcr_el1
+var TCREL1Val = uint64(((0b11 << 30) | // granule size in kernel
+	(0b11 << 28) | // inner shareable
+	(0b01 << 26) | // write back (outer)
+	(0b01 << 24) | // write back (inner)
+	(22 << 16) | //22 is T1SZ, 42bit addr space (same as example https://developer.arm.com/docs/den0024/latest/the-memory-management-unit/translating-a-virtual-address-to-a-physical-address)
+	(0b1 << 14) | // granule size in user
+	(0b11 << 12) | //inner shareable
+	(0b01 << 10) | //write back (outer)
+	(0b01 << 8) | //write back (inner)
+	(22 << 0))) //22 is T0SZ, 42 bit addr space
+
+var SCTRLEL1Val = uint64((0xC00800) | //mandatory reserved 1 bits
+	(1 << 12) | // I Cache for both el1 and el0
+	(1 << 4) | // SA0 stack alignment check in el0
+	(1 << 3) | // SA stack alignment check in el1
+	(1 << 2) | //  D Cache for both el1 and el0
+	(1 << 1) | //  Alignment check enable
+	(1 << 0)) // MMU ENABLED!! THE BIG DOG
 
 func setupVM() {
-	//setup memory types and attributes
-	MAIRVal = uint64(((MemoryDeviceNoGatherNoReorderNoEarlyWriteAckValue << (MemoryDeviceNoGatherNoReorderNoEarlyWriteAck * 8)) |
-		(MemoryNoCacheValue << (MemoryNoCache * 8)) |
-		(MemoryNormalValue << (MemoryNormal * 8))))
-
-	// zero on these fields
-	// TBI - no tag bits
-	// IPS - 32 bit (4GB)
-	// EPD1 - enable walks in kernel
-	// EPD0 - enable walks in userspc
-	//TCR REG https://developer.arm.com/docs/ddi0595/b/aarch64-system-registers/tcr_el1
-
-	TCREL1Val = uint64(((0b11 << 30) | // granule size in kernel
-		(0b11 << 28) | // inner shareable
-		(0b01 << 26) | // write back (outer)
-		(0b01 << 24) | // write back (inner)
-		(22 << 16) | //22 is T1SZ, 42bit addr space (same as example https://developer.arm.com/docs/den0024/latest/the-memory-management-unit/translating-a-virtual-address-to-a-physical-address)
-		(0b1 << 14) | // granule size in user
-		(0b11 << 12) | //inner shareable
-		(0b01 << 10) | //write back (outer)
-		(0b01 << 8) | //write back (inner)
-		(22 << 0))) //22 is T0SZ, 42 bit addr space
-
-	// Undocumented TTBRCNP from BZT's tutorial....
-	//TTBR0Val := uint64((0x100000 << 7) | UndocumentedTTBRCNP) //base addr 0x10_0000, no other shenanigans
-	//TTBR1Val := uint64((0x100000 << 7) | UndocumentedTTBRCNP) //base addr 0x10_0000, no other shenanigans
-
-	SCTRLEL1Val = uint64((0xC00800) | //mandatory reserved 1 bits
-		(1 << 12) | // I Cache for both el1 and el0
-		(1 << 4) | // SA0 stack alignment check in el0
-		(1 << 3) | // SA stack alignment check in el1
-		(1 << 2) | //  D Cache for both el1 and el0
-		(1 << 1) | //  Alignment check enable
-		(1 << 0)) // MMU ENABLED!! THE BIG DOG
 
 	//we don't use level 1 because we have 42 bit address and 64k granules
 	sizeOfLevel2 := uintptr(0x1_0000) //8192 entries (only 4 in use, the lowest 4)
