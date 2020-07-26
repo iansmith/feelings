@@ -3,8 +3,11 @@ package main
 import (
 	"fmt"
 	"math/rand"
+	"unsafe"
 
 	"device/arm"
+
+	"lib/upbeat"
 )
 
 //go:export raw_exception_handler
@@ -28,7 +31,24 @@ const numOps = 1000
 var poolDataNode [512]StringishNodeDL
 var poolData [512]Stringish
 
-var dl = NewStringishFixedDL(512, &poolDataNode[0], &poolData[0])
+var rawBitsForPool [32]uint64
+var rawBitsForPoolNode [32]uint64
+
+var pool = StringishManagedPool{
+	elements: unsafe.Pointer(&poolData[0]),
+	bitset:   upbeat.NewBitSet(512, uintptr(unsafe.Pointer(&rawBitsForPool[0]))),
+	num:      512,
+	size:     int(unsafe.Sizeof(Stringish{})),
+}
+
+var nodePool = StringishNodeDLManagedPool{
+	elements: unsafe.Pointer(&poolDataNode[0]),
+	bitset:   upbeat.NewBitSet(512, uintptr(unsafe.Pointer(&rawBitsForPoolNode[0]))),
+	num:      512,
+	size:     int(unsafe.Sizeof(StringishNodeDL{})),
+}
+
+var dl = NewStringishFixedDL(&nodePool, &pool)
 
 func main() {
 	rand.Seed(2)
@@ -109,7 +129,7 @@ func main() {
 	} else {
 		fmt.Printf("after %d ops, DL size is %d\n", numOps, dl.Length())
 		fmt.Printf("pools are full? %v\n", dl.PoolsFull())
-		fmt.Printf("clearing remaining items from pool")
+		fmt.Printf("clearing remaining items from pool\n")
 	}
 
 	for !dl.Empty() {

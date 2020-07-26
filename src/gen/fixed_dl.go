@@ -1,23 +1,18 @@
 package gen
 
-import "unsafe"
-
 type GenericFixedDL struct {
-	pool  GenericManagedPool
-	nodes GenericNodeDLManagedPool
+	pool  *GenericManagedPool
+	nodes *GenericNodeDLManagedPool
 	dl    GenericDoublyLinkedList
 }
 
-func NewGenericFixedDL(size uint32, nodeRaw *GenericNodeDL, elements *Generic) GenericFixedDL {
-	tricky := new(Generic)
-	nodes := NewGenericNodeDLManagedPool(size,
-		int(unsafe.Sizeof(GenericNodeDL{})), nodeRaw)
-	pool := NewGenericManagedPool(size,
-		int(unsafe.Sizeof(*tricky)), elements)
-	dl := NewGenericDoublyLinkedList()
-	return GenericFixedDL{
-		pool: pool, nodes: nodes, dl: dl,
+func NewGenericFixedDL(nodes *GenericNodeDLManagedPool, pool *GenericManagedPool) GenericFixedDL {
+	result := GenericFixedDL{
+		pool: pool, nodes: nodes,
 	}
+	dl := NewGenericDoublyLinkedListWithAllocator(result.Alloc, result.Dealloc)
+	result.dl = dl
+	return result
 }
 
 func (g *GenericFixedDL) Alloc() (*GenericNodeDL, *Generic) {
@@ -44,7 +39,7 @@ func (g *GenericFixedDL) PoolsEmpty() bool {
 	return g.nodes.Empty() && g.pool.Empty()
 }
 func (g *GenericFixedDL) PoolsFull() bool {
-	return g.nodes.Full() && g.pool.Empty()
+	return g.nodes.Full() && g.pool.Full()
 }
 
 //

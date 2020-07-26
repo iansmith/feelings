@@ -296,6 +296,7 @@ func (g *GenericDoublyLinkedList) Remove(n *GenericNodeDL) {
 			g.last = nil
 			n.prev = nil
 			n.next = nil
+			return
 		}
 		//two edge cases
 		if n.prev == nil && g.first == n {
@@ -303,12 +304,14 @@ func (g *GenericDoublyLinkedList) Remove(n *GenericNodeDL) {
 			n.next.prev = nil
 			n.prev = nil
 			n.next = nil
+			return
 		}
 		if n.next == nil && g.last == n {
 			g.last = n.prev
 			n.prev.next = nil
 			n.prev = nil
 			n.next = nil
+			return
 		}
 		panic("invariant of removing first or last element violated")
 	}

@@ -26,13 +26,17 @@ $(BOOTASM).o: $(BOOTLIB)/$(BOOTASM).S
 
 
 $(NAME): *.go $(BOOTASM).o
-	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -verifyir -opt 1 -cflags=-g -ldflags='$(BOOTASM).o' -target rpi3_qemu -o $(NAME) .
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -opt 1 -cflags=-g -ldflags='$(BOOTASM).o' -target rpi3_qemu -o $(NAME) .
+
 
 $(NAME).hardware: *.go $(BOOTASM).o
 	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) build -opt 1 -ldflags='$(BOOTASM).o' -target rpi3 -o $(NAME).hardware .
 
 clean:
 	rm $(NAME) $(NAME).hardware kernel8.img *.o >/dev/null 2>/dev/null || true
+
+test:
+	GOPATH=$(FEELINGS) $(TINYGO_TINYGO) test .
 
 run:
 	$(TOOLS)/bin/qemu-system-aarch64 -M raspi3 -kernel $(NAME) \

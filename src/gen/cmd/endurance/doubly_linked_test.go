@@ -1,4 +1,4 @@
-package gen
+package main
 
 import (
 	"testing"
@@ -30,11 +30,10 @@ func basicHelper(t *testing.T, g *StringishDoublyLinkedList) {
 
 	}
 
-	s1 := NewStringish("iansmith")
-	s2 := NewStringish("love will tear us apart")
-	s3 := NewStringish("the four ladies")
+	s1 := g.Append()
+	s1.L = len("iansmith")
+	s1.S = "iansmith"
 
-	g.Append(s1)
 	if g.Empty() {
 		t.Errorf("doubly linked list failed empty test after append")
 	}
@@ -48,7 +47,10 @@ func basicHelper(t *testing.T, g *StringishDoublyLinkedList) {
 		t.Errorf("doubly linked list Last() error")
 	}
 
-	g.Append(s2)
+	s2 := g.Append()
+	s2.L = len("love will tear us apart")
+	s2.S = "love will tear us apart"
+
 	if 2 != g.Length() {
 		t.Errorf("doubly linked list failed to update length() after 2nd append")
 	}
@@ -62,7 +64,10 @@ func basicHelper(t *testing.T, g *StringishDoublyLinkedList) {
 		t.Errorf("doubly linked llist failed to update Last() properly")
 	}
 
-	g.Push(s3)
+	s3 := g.Push()
+	s3.L = len("the four ladies")
+	s3.S = "the four ladies"
+
 	if 3 != g.Length() {
 		t.Errorf("doubly linked list failed to update Length() after 3rd (push)")
 	}
