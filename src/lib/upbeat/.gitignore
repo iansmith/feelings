@@ -1,1 +1,5 @@
 font.o
+buddy_dl.go
+buddy_fixed_dl.go
+buddy_pool.go
+

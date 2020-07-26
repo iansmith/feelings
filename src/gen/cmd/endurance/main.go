@@ -51,6 +51,7 @@ var nodePool = StringishNodeDLManagedPool{
 var dl = NewStringishFixedDL(&nodePool, &pool)
 
 func main() {
+
 	rand.Seed(2)
 
 	for i := 0; i < enduranceListSize; i++ {
@@ -141,4 +142,5 @@ func main() {
 	} else {
 		fmt.Printf("OK: all pools are full after clearing list\n")
 	}
+
 }
