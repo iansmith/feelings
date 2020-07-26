@@ -5,55 +5,12 @@ import (
 	"unsafe"
 
 	"lib/trust"
+	"lib/upbeat"
 )
-
-type BitSet struct {
-	size uint32
-	data unsafe.Pointer //actually an array of uint64s
-}
 
 const tranquilDebug = false
 const failLimit = 3
 const pageUnit = 512
-
-//bitsets have to be multiples of 64.  the ptr provided should be
-//already allocated statically to be the place to store the data.
-//caller must be sure it is aligned properly.
-func NewBitSet(size uint32, ptr unsafe.Pointer) *BitSet {
-	mask := ^(uint32(0x3f))
-	if size&mask != size {
-		trust.Errorf("your bitset size is not a multiple of 64: %d", size)
-		return nil
-	}
-	result := &BitSet{
-		data: ptr,
-		size: size,
-	}
-	result.ClearAll()
-	return result
-}
-
-func (b *BitSet) On(bit cacheIndex) bool {
-	boff := uintptr(bit >> 6)       //divide by 8 to get number of bytes, 8 again for which uint64
-	mask := uint64(1 << (bit % 64)) //which bit in the right
-	tmp := (*uint64)(unsafe.Pointer(uintptr(b.data) + (8 * boff)))
-	return (*tmp)&mask != 0
-}
-func (b *BitSet) Set(bit cacheIndex) {
-	boff := uintptr(bit >> 6)       //divide by 8 to get number of bytes, 8 again for which uint64
-	mask := uint64(1 << (bit % 64)) //which bit in the right
-	tmp := (*uint64)(unsafe.Pointer(uintptr(b.data) + (8 * boff)))
-	v := (*tmp) | mask
-	*tmp = v
-}
-
-func (b *BitSet) ClearAll() {
-	numUint64s := b.size >> 6 //really dividing by 64 because  512/8
-	for i := uint32(0); i < numUint64s; i++ {
-		curr := (*uint64)(unsafe.Pointer(uintptr(i*8) + uintptr(unsafe.Pointer(b.data))))
-		*curr = 0
-	}
-}
 
 //go:extern loaded_bit_set
 var loadedBitSet uint64
@@ -69,7 +26,7 @@ type bufferManager interface {
 type Tranquil struct {
 	data         unsafe.Pointer //actually a contiguous buffer of 512 byte pages
 	sizeInPages  uint32
-	inUse        *BitSet
+	inUse        *upbeat.BitSet
 	loader       loader
 	saver        saver
 	pageMap      map[sectorNumber]bufferEntry
@@ -88,7 +45,7 @@ func NewTraquilBufferManager(ptr unsafe.Pointer, sizeInSectors uint32, bitSetDat
 	result := &Tranquil{
 		sizeInPages: sizeInSectors,
 		data:        ptr,
-		inUse:       NewBitSet(sizeInSectors, bitSetData),
+		inUse:       upbeat.NewBitSet(sizeInSectors, bitSetData),
 		pageMap:     make(map[sectorNumber]bufferEntry),
 		loader:      ld,
 		saver:       sv,
@@ -130,7 +87,7 @@ func (t *Tranquil) PossiblyLoad(sector sectorNumber) (unsafe.Pointer, EmmcError)
 	for fails < failLimit {
 		fails++
 		r := cacheIndex(rand.Intn(int(t.sizeInPages)))
-		if t.inUse.On(r) {
+		if t.inUse.On(upbeat.BitIndex(r)) {
 			continue
 		}
 		winner = r
@@ -140,7 +97,7 @@ func (t *Tranquil) PossiblyLoad(sector sectorNumber) (unsafe.Pointer, EmmcError)
 	if !haveWinner {
 		//any free spaces?
 		for i := cacheIndex(0); i < cacheIndex(t.sizeInPages); i++ {
-			if t.inUse.On(i) {
+			if t.inUse.On(upbeat.BitIndex(i)) {
 				continue
 			}
 			haveWinner = true
@@ -176,7 +133,7 @@ func (t *Tranquil) PossiblyLoad(sector sectorNumber) (unsafe.Pointer, EmmcError)
 	ptr := unsafe.Pointer(uintptr(t.data) + uintptr(winner*pageUnit))
 	//store the mapping
 	t.pageMap[sector] = bufferEntry{ptr, winner}
-	t.inUse.Set(winner)
+	t.inUse.Set(upbeat.BitIndex(winner))
 	if err := t.loader(sector, ptr); err != EmmcOk {
 		trust.Errorf("buffer management failed to load page: %x", sector)
 		return nil, EmmcFailedReadIntoCache

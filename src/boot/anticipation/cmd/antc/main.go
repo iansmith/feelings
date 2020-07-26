@@ -96,9 +96,13 @@ func main() {
 	ok := canBootFromDisk(logger)
 	if ok {
 		params := loader.NewKernelProcStartupInfo(maddie, 3)
-		params.KernelProcBootFromDisk(logger)
-		logger.Errorf("Failed on attempt to boot from disk, aborting.")
-		machine.Abort()
+		if err := params.KernelProcBootFromDisk(logger); err != loader.LoaderNoError {
+			logger.Errorf("failed to load kernel process: %s", err)
+		}
+		logger.Debugf("Bootloader on Processor 0 deadlooping")
+		for {
+			arm.Asm("nop")
+		}
 	} else {
 		trust.Infof("unable to locate disk or boot file, using serial...")
 	}
